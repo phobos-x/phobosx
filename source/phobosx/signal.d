@@ -105,7 +105,8 @@ void main()
  * Observed msg 'setting new value' and value 6
  * </pre>
  */
-string signal(Args...)(string name, string protection="private") {
+string signal(Args...)(string name, string protection="private")
+{
      string argList="(";
      import std.traits : fullyQualifiedName;
      foreach (arg; Args)
@@ -709,7 +710,8 @@ unittest {
         mixin(signal!(string, long)("s3"));
     }
 
-    void test(T)(T a) {
+    void test(T)(T a)
+    {
         auto o1 = new Observer;
         auto o2 = new Observer;
         auto o3 = new Observer;
@@ -856,7 +858,8 @@ unittest {
     a.value6 = 46;
 }
 
-version(none) { // Disabled because of dmd @@@BUG7758@@@
+version(none)
+{ // Disabled because of dmd @@@BUG7758@@@
 unittest 
 {
     import std.stdio;
@@ -921,13 +924,13 @@ unittest
     s1.strongConnect(() => testfunc(0));
     s1.strongConnect(() => testfunc(1));
     s1.strongConnect(() => testfunc(2));
-    try {
-        s1.emit();
-    }
-    catch(Exception e) {
+    try s1.emit();
+    catch(Exception e)
+    {
         Throwable t=e;
         int i=0;
-        while(t) {
+        while(t)
+        {
             debug (signal) stderr.writefln("Caught exception (this is fine)");
             assert(to!int(t.msg)==i);
             t=t.next;
