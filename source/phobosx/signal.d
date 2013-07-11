@@ -32,15 +32,45 @@ private extern (C) void  rt_attachDisposeEvent( Object obj, DisposeEvt evt );
 private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
 //debug=signal;
 
-/************************
- * Mixin to create a signal within a class object.
+
+/**
+ * string mixin for creating a signal.
  *
- * Different signals can be added to a class by naming the mixins.
+ * It creates a FullSignal instance named "_name", where name is given as first parameter with given protection and an accessor method with the current context protection named "name" returning either a ref RestrictedSignal or ref FullSignal depending on the given protection.
+ *
+ * Params:
+ *   name = How the signal should be named. The ref returning function
+ *   will be named like this, the actual struct instance will have an
+ *   underscore prefixed.
+ *   
+ *   protection = Can be any valid protection specifier like
+ *   "private", "protected", "package" or in addition "none". Default
+ *   is "private". It specifies the protection of the struct instance,
+ *   if none is given, private is used and the ref returning function
+ *   will return a FullSignal instead of a RestrictedSignal. The
+ *   protection of the accessor method is specified by the surrounding
+ *   protection scope.
  *
  * Example:
----
-import std.signal;
-import std.stdio;
+ ---
+ class MyObject
+ {
+     mixin(signal!(string, int)("valueChanged"));
+
+     int value() @property { return _value_; }
+     int value(int v) @property
+     {
+        if (v != _value)
+        {
+            _value = v;
+            // call all the connected slots with the two parameters
+            _valueChanged.emit("setting new value", v);
+        }
+        return v;
+    }
+private:
+    int _value;
+}
 
 class Observer
 {   // our slot
@@ -49,31 +79,9 @@ class Observer
         writefln("Observed msg '%s' and value %s", msg, i);
     }
 }
-
-class Foo
-{
-    int value() { return _value; }
-
-    int value(int v)
-    {
-        if (v != _value)
-        {   _value = v;
-            // call all the connected slots with the two parameters
-            emit("setting new value", v);
-        }
-        return v;
-    }
-
-    // Mix in all the code we need to make Foo into a signal
-    mixin Signal!(string, int);
-
-  private :
-    int _value;
-}
-
 void main()
 {
-    Foo a = new Foo;
+    auto a = new MyObject;
     Observer o = new Observer;
 
     a.value = 3;                // should not call o.watch()
@@ -92,88 +100,25 @@ void main()
  * Observed msg 'setting new value' and value 4
  * Observed msg 'setting new value' and value 6
  * </pre>
- *
  */
+string signal(Args...)(string name, string protection="private") {
+     string argList="(";
+     import std.traits : fullyQualifiedName;
+     foreach (arg; Args)
+     {
+         argList~=fullyQualifiedName!(arg)~", ";
+     }
+     if (argList.length>"(".length)
+         argList = argList[0 .. $-2];
+     argList ~= ")";
 
-/**
-  * Todo:
-  *     - DONE: Handle slots removing/adding slots to the signal. (My current idea will enable adding/removing but will throw an exception if a slot calls emit.)
-  *     - DONE: emit called while in emit would easily be possible with fibers, two solutions:
-            - simply allow it. Meaning that the second emit is executed before the first one has finished.
-            - queue it and execute it, when the first one has finished.
-            The second one is more complex to implement, but seems to be the better solution. In fact it is not, because you basically serialize multiple fibers which can pretty much make them useless. In the first case, the slot has to handle the case when being called before an io operation is finished but this also means that it can do load balancing or whatever. With the queue implementation the access would just be serialized and the slot implementation could not do anything about it. So in fact the first implementation is also the expected one, even in the case of fibers.
-  *     - DONE: Reduce memory usage by using a single array.
-  *     - DONE: Ensure correctness on exceptions (chain them)
-  *     - DONE (just did it): Checkout why I should use ==class instead of : Object and do it if it improves things
-  * - DONE: Add strongConnect() method.
-  * - CANCELED (keep it simple, functionality can be implemented in wrapper delegates if needed): Block signal functionality?
-  *     - TODO: Think about const correctness
-  * - DONE: Implement postblit and op assign & write unittest for these.
-  * - TODO: Document not to rely on order in which the slots are called.
-  *     - TODO: Mark it as trusted
-  *     - TODO: Write unit tests
-  * - DONE: Factor out template agnostic code to non templated code. (Use casts) 
-  *     -> Avoids template bloat
-  *     -> We can drop linkin()
-  * - DONE: Provide a mixin wrapper, so only the containing object can emit a signal, with no additional work needed.
-  *     - TODO: Rename it to std.signals2
-  *     - TODO: Update documentation
-  *     - TODO: Fix coding style to style guidlines of phobos.
-  * - TODO: Document design decisions:
-        - Why use mixin: So only containing object can emit signals+ copying a signal is not possible.
-        - Performance wise: Optimize for very small empty signal, it should be no more than pointer+length. connect/disconnect is optimized to be fast in the case that emit is not currently running. Memory allocation is only done if active.
-  *     - Get it into review for phobos :-)
-  * - TODO: See if issue 4150 is still present.
-  * - TODO:  Check documenation generated by DDOC and improve it.
-  * - TODO:  Have it reviewed
-  * - TODO: Get it into phobos.
-  */
-/**
-  * Convenience wrapper mixin.
-  * It allows you to do someobject.signal.connect() without allowing you to call emit, which only the containing object can.
-  * It offers access to the underlying signal object via full (only for the containing object) or restricted for public access.
-  */
-mixin template Signal(Args...)
-{
-    private final void emit( Args args )
-    {
-        full.emit(args);
-    }
-    final void connect(string method, ClassType)(ClassType obj) if(is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
-    {
-        full.connect!(method, ClassType)(obj);
-    }
-    final void connect(ClassType)(ClassType obj, void delegate(ClassType obj, Args) dg) if(is(ClassType == class))
-    {
-        full.connect!ClassType(obj, dg);
-    }
-    final void strongConnect(void delegate(Args) dg)
-    {
-        full.strongConnect(dg);
-    }
-    final void disconnect(string method, ClassType)(ClassType obj) if(is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
-    {
-        full.disconnect!(method, ClassType)(obj);
-    }
-    final void disconnect(ClassType)(ClassType obj, void delegate(ClassType, T1) dg) if(is(ClassType == class))
-    {
-        full.disconnect!(ClassType)(obj, dg);
-    }
-    final void disconnect(ClassType)(ClassType obj) if(is(ClassType == class)) 
-    {
-        full.disconnect!ClassType(obj);
-    }
-    final void strongDisconnect(void delegate(Args) dg)
-    {
-        full.strongDisconnect(dg);
-    }
-    final ref RestrictedSignal!(Args) restricted() @property
-    {
-        return full.restricted;
-    }
-    private FullSignal!(Args) full;
-}
+     string output = (protection == "none" ? "private" : protection) ~ " FullSignal!" ~ argList ~ " _" ~ name ~ ";\n";
+     string rType= protection == "none" ? "FullSignal!" : "RestrictedSignal!";
+     output ~= "ref " ~ rType ~ argList ~ " " ~ name ~ "() { return _" ~ name ~ ";}\n";
+     return output;
+ }
 
+pragma(msg, signal!int("haha"));
 struct FullSignal(Args...)
 {
     alias restricted this;
@@ -646,13 +591,13 @@ unittest
         {
             if (v != _value)
             {   _value = v;
-                extendedSig.emit("setting new value", v);
-                //simpleSig.emit(v);
+                _extendedSig.emit("setting new value", v);
+                //_simpleSig.emit(v);
             }
             return v;
         }
 
-        mixin Signal!(string, int) extendedSig;
+        mixin(signal!(string, int)("extendedSig"));
         //Signal!(int) simpleSig;
 
         private:
@@ -726,13 +671,13 @@ unittest {
 
     class Bar
     {
-        @property void value1(int v)  { s1.emit("str1", v); }
-        @property void value2(int v)  { s2.emit("str2", v); }
-        @property void value3(long v) { s3.emit("str3", v); }
+        @property void value1(int v)  { _s1.emit("str1", v); }
+        @property void value2(int v)  { _s2.emit("str2", v); }
+        @property void value3(long v) { _s3.emit("str3", v); }
 
-        mixin Signal!(string, int)  s1;
-        mixin Signal!(string, int)  s2;
-        mixin Signal!(string, long) s3;
+        mixin(signal!(string, int) ("s1"));
+        mixin(signal!(string, int) ("s2"));
+        mixin(signal!(string, long)("s3"));
     }
 
     void test(T)(T a) {
@@ -804,13 +749,13 @@ unittest {
 
     class BarDerived: Bar
     {
-        @property void value4(int v)  { s4.emit("str4", v); }
-        @property void value5(int v)  { s5.emit("str5", v); }
-        @property void value6(long v) { s6.emit("str6", v); }
+        @property void value4(int v)  { _s4.emit("str4", v); }
+        @property void value5(int v)  { _s5.emit("str5", v); }
+        @property void value6(long v) { _s6.emit("str6", v); }
 
-        mixin Signal!(string, int)  s4;
-        mixin Signal!(string, int)  s5;
-        mixin Signal!(string, long) s6;
+        mixin(signal!(string, int) ("s4"));
+        mixin(signal!(string, int) ("s5"));
+        mixin(signal!(string, long)("s6"));
     }
 
     auto a = new BarDerived;
@@ -890,7 +835,7 @@ unittest
     struct Property 
     {
         alias value this;
-        mixin Signal!(int) signal;
+        mixin(signal!(int)("signal"));
         @property int value() 
         {
             return value_;
@@ -899,7 +844,7 @@ unittest
         {
             debug (signal) writeln("Assigning int to property with signal: ", &this);
             value_ = val;
-            signal.emit(val);
+            _signal.emit(val);
             return this;
         }
         private: 
@@ -967,12 +912,12 @@ unittest
 {
     class A
     {
-        mixin Signal!(string, int) s1;
+        mixin(signal!(string, int)("s1"));
     }
 
     class B : A
     {
-        mixin Signal!(string, int) s2;
+        mixin(signal!(string, int)("s2"));
     }
 }
 /* vim: set ts=4 sw=4 expandtab : */
