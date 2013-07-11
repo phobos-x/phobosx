@@ -36,7 +36,11 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
 /**
  * string mixin for creating a signal.
  *
- * It creates a FullSignal instance named "_name", where name is given as first parameter with given protection and an accessor method with the current context protection named "name" returning either a ref RestrictedSignal or ref FullSignal depending on the given protection.
+ * It creates a FullSignal instance named "_name", where name is given
+ * as first parameter with given protection and an accessor method
+ * with the current context protection named "name" returning either a
+ * ref RestrictedSignal or ref FullSignal depending on the given
+ * protection.
  *
  * Params:
  *   name = How the signal should be named. The ref returning function
@@ -57,7 +61,7 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
  {
      mixin(signal!(string, int)("valueChanged"));
 
-     int value() @property { return _value_; }
+     int value() @property { return _value; }
      int value(int v) @property
      {
         if (v != _value)
@@ -118,7 +122,8 @@ string signal(Args...)(string name, string protection="private") {
      return output;
  }
 
-pragma(msg, signal!int("haha"));
+debug (signal) pragma(msg, signal!int("haha"));
+
 struct FullSignal(Args...)
 {
     alias restricted this;
@@ -141,7 +146,7 @@ struct FullSignal(Args...)
      */
     void emit( Args args )
     {
-        restricted_.impl_.emit(args);
+        restricted_._impl.emit(args);
     }
 
     /**
@@ -161,12 +166,17 @@ struct RestrictedSignal(Args...)
     /**
       * Direct connection to an object.
       *
-      * Use this method if you want to connect directly to an objects method matching the signature of this signal.
-      * The connection will have weak reference semantics, meaning if you drop all references to the object the garbage
-      * collector will collect it and this connection will be removed.
-      * Preconditions: obj must not be null. mixin("&obj."~method) must be valid and compatible.
+      * Use this method if you want to connect directly to an objects
+      * method matching the signature of this signal.  The connection
+      * will have weak reference semantics, meaning if you drop all
+      * references to the object the garbage collector will collect it
+      * and this connection will be removed.
+      *
+      * Preconditions: obj must not be null. mixin("&obj."~method)
+      * must be valid and compatible.
       * Params:
-      *     obj = Some object of a class implementing a method compatible with this signal.
+      *     obj = Some object of a class implementing a method
+      *     compatible with this signal.
       */
     void connect(string method, ClassType)(ClassType obj) if(is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
     in
@@ -175,22 +185,31 @@ struct RestrictedSignal(Args...)
     }
     body
     {
-        impl_.addSlot(obj, cast(void delegate())mixin("&obj."~method));
+        _impl.addSlot(obj, cast(void delegate())mixin("&obj."~method));
     }
     /**
       * Indirect connection to an object.
       *
-      * Use this overload if you want to connect to an object method which does not match the signals signature.
-      * You can provide any delegate to do the parameter adaption, but make sure your delegates' context does not contain a reference
-      * to the target object, instead use the provided obj parameter, where the object passed to connect will be passed to your delegate.
-      * This is to make weak ref semantics possible, if your delegate contains a ref to obj, the object won't be freed as long as
+      * Use this overload if you want to connect to an object method
+      * which does not match the signals signature.  You can provide
+      * any delegate to do the parameter adaption, but make sure your
+      * delegates' context does not contain a reference to the target
+      * object, instead use the provided obj parameter, where the
+      * object passed to connect will be passed to your delegate.
+      * This is to make weak ref semantics possible, if your delegate
+      * contains a ref to obj, the object won't be freed as long as
       * the connection remains.
       *
-      * Preconditions: obj and dg must not be null (dg's context may). dg's context must not be equal to obj.
+      * Preconditions: obj and dg must not be null (dg's context
+      * may). dg's context must not be equal to obj.
       *
       * Params:
-      *     obj = The object to connect to. It will be passed to the delegate when the signal is emitted.
-      *     dg  = A wrapper delegate which takes care of calling some method of obj. It can do any kind of parameter adjustments necessary.
+      *     obj = The object to connect to. It will be passed to the
+      *     delegate when the signal is emitted.
+      *     
+      *     dg = A wrapper delegate which takes care of calling some
+      *     method of obj. It can do any kind of parameter adjustments
+      *     necessary.
      */
     void connect(ClassType)(ClassType obj, void delegate(ClassType obj, Args) dg) if(is(ClassType == class))
     in
@@ -201,15 +220,18 @@ struct RestrictedSignal(Args...)
     }
     body
     {
-        impl_.addSlot(obj, cast(void delegate()) dg);
+        _impl.addSlot(obj, cast(void delegate()) dg);
     }
 
     /**
       * Connect with strong ref semantics.
       *
-      * Use this overload if you either really really want strong ref semantics for some reason or because you want
-      * to connect some non-class method delegate. Whatever the delegates context references, will stay in memory
-      * as long as the signals connection is not removed and the signal gets not destroyed itself.
+      * Use this overload if you either really really want strong ref
+      * semantics for some reason or because you want to connect some
+      * non-class method delegate. Whatever the delegates context
+      * references, will stay in memory as long as the signals
+      * connection is not removed and the signal gets not destroyed
+      * itself.
       *
       * Preconditions: dg must not be null. (Its context may.)
       *
@@ -223,14 +245,15 @@ struct RestrictedSignal(Args...)
     }
     body
     {
-        impl_.addSlot(null, cast(void delegate()) dg);
+        _impl.addSlot(null, cast(void delegate()) dg);
     }
 
 
     /**
       * Disconnect a direct connection.
       *
-      * After issuing this call method of obj won't be triggered any longer when emit is called.
+      * After issuing this call method of obj won't be triggered any
+      * longer when emit is called.
       * Preconditions: Same as for direct connect.
       */
     void disconnect(string method, ClassType)(ClassType obj) if(is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
@@ -241,15 +264,18 @@ struct RestrictedSignal(Args...)
     body
     {
         void delegate(Args) dg = mixin("&obj."~method);
-        impl_.removeSlot(obj, cast(void delegate()) dg);
+        _impl.removeSlot(obj, cast(void delegate()) dg);
     }
 
     /**
       * Disconnect an indirect connection.
       *
-      * For this to work properly, dg has to be exactly the same as the one passed to connect. So if you used a lamda
-      * you have to keep a reference to it somewhere, if you want to disconnect the connection later on.
-      * If you want to remove all connections to a particular object use the overload which only takes an object paramter.
+      * For this to work properly, dg has to be exactly the same as
+      * the one passed to connect. So if you used a lamda you have to
+      * keep a reference to it somewhere if you want to disconnect
+      * the connection later on.  If you want to remove all
+      * connections to a particular object use the overload which only
+      * takes an object paramter.
      */
     void disconnect(ClassType)(ClassType obj, void delegate(ClassType, T1) dg) if(is(ClassType == class))
     in
@@ -259,7 +285,7 @@ struct RestrictedSignal(Args...)
     }
     body
     {
-        impl_.removeSlot(obj, cast(void delegate())dg);
+        _impl.removeSlot(obj, cast(void delegate())dg);
     }
 
     /**
@@ -274,7 +300,7 @@ struct RestrictedSignal(Args...)
     }
     body
     {
-        impl_.removeSlot(obj);
+        _impl.removeSlot(obj);
     }
     
     /**
@@ -289,10 +315,10 @@ struct RestrictedSignal(Args...)
     }
     body
     {
-        impl_.removeSlot(null, cast(void delegate()) dg);
+        _impl.removeSlot(null, cast(void delegate()) dg);
     }
     private:
-    SignalImpl impl_;
+    SignalImpl _impl;
 }
 
 private struct SignalImpl
@@ -321,15 +347,15 @@ private struct SignalImpl
     void emit(Args...)( Args args )
     {
         int emptyCount=0;
-        doEmit(slots_[0 .. $], 0, emptyCount, args);
-        slots_=slots_[0 .. $-emptyCount];
-        slots_.assumeSafeAppend();
+        doEmit(_slots[0 .. $], 0, emptyCount, args);
+        _slots=_slots[0 .. $-emptyCount];
+        _slots.assumeSafeAppend();
     }
 
     void addSlot(Object obj, void delegate() dg)
     {
-        slots_.length++;
-        slots_[$-1] = SlotImpl(obj, dg);
+        _slots.length++;
+        _slots[$-1] = SlotImpl(obj, dg);
     }
     void removeSlot(Object obj, void delegate() dg)
     {
@@ -343,11 +369,12 @@ private struct SignalImpl
 
     ~this()
     {
-        foreach (ref slot; slots_)
+        foreach (ref slot; _slots)
         {
             debug (signal) stderr.writeln("Destruction, removing some slot, signal: ", &this);
             slot = SlotImpl.init; // Force destructor to trigger (copy is disabled)
-            // This is needed because ATM the GC won't trigger struct destructors to be run when within a GC managed array.
+            // This is needed because ATM the GC won't trigger struct
+            // destructors to be run when within a GC managed array.
         }
     }
 /// Little helper functions:
@@ -358,7 +385,7 @@ private struct SignalImpl
     void removeSlot(bool delegate(const ref SlotImpl) isRemoved)
     {
         import std.algorithm : filter;
-        foreach (ref slot; slots_)
+        foreach (ref slot; _slots)
             if(isRemoved(slot))
                 slot = SlotImpl.init;
     }
@@ -384,24 +411,27 @@ private struct SignalImpl
 
     }
 
-    SlotImpl[] slots_;
+    SlotImpl[] _slots;
 }
 
 
 // Simple convenience struct for signal implementation.
-// Its is inherently unsafe. It is not a template so SignalImpl does not need to be one.
+// Its is inherently unsafe. It is not a template so SignalImpl does
+// not need to be one.
 private struct SlotImpl 
 {
     @disable this(this);
     
-    // Pass null for o if you have a strong ref delegate.
+    /// Pass null for o if you have a strong ref delegate.
+    /// dg.funcptr must not point to heap memory.
     this(Object o, void delegate() dg) 
     {
-        obj_ = WeakRef(o);
-        dataPtr_ = dg.ptr;
-        funcPtr_ = dg.funcptr;
-        if (o && dataPtr_ is cast(void*) o) 
-            dataPtr_ = direct_ptr_flag;
+        _obj = WeakRef(o);
+        _dataPtr = dg.ptr;
+        _funcPtr = dg.funcptr;
+        assert(GC.addrOf(_funcPtr) is null, "Your function is implemented on the heap? Such dirty tricks are not supported with std.signal!");
+        if (o && _dataPtr is cast(void*) o) 
+            _dataPtr = directPtrFlag;
         else if (!o)
             hasObject=false;
     }
@@ -410,22 +440,22 @@ private struct SlotImpl
      */
     this(ref SlotImpl other) {
         auto o = other.obj;
-        obj_ = WeakRef(o);
-        dataPtr_ = other.dataPtr_;
-        funcPtr_ = other.funcPtr_;
+        _obj = WeakRef(o);
+        _dataPtr = other._dataPtr;
+        _funcPtr = other._funcPtr;
         other = SlotImpl.init; // Destroy original!
     }
     @property Object obj() const
     {
-        return obj_.obj;
+        return _obj.obj;
     }
 
     /**
-     * Whether or not obj_ should contain a valid object. (We have a weak connection)
+     * Whether or not _obj should contain a valid object. (We have a weak connection)
      */
     bool hasObject() @property const
     {
-        return cast(ptrdiff_t) funcPtr_ & 1;
+        return cast(ptrdiff_t) _funcPtr & 1;
     }
     /**
      * Call the slot.
@@ -439,20 +469,20 @@ private struct SlotImpl
         
         if (!funcPtr || (hasObject && !o_addr)) 
             return false;
-        if (dataPtr_ is direct_ptr_flag || !hasObject)
+        if (_dataPtr is directPtrFlag || !hasObject)
         {
             void delegate(Args) mdg;
             mdg.funcptr=cast(void function(Args)) funcPtr;
             if(hasObject)
                 mdg.ptr = o_addr;
             else
-                mdg.ptr = dataPtr_;
+                mdg.ptr = _dataPtr;
             mdg(args);
         }
         else
         {
             void delegate(Object, Args) mdg;
-            mdg.ptr = dataPtr_;
+            mdg.ptr = _dataPtr;
             mdg.funcptr = cast(void function(Object, Args)) funcPtr;
             mdg(o, args);
         }
@@ -461,19 +491,18 @@ private struct SlotImpl
 private:
     void* funcPtr() @property const
     {
-        return cast(void*)( cast(ptrdiff_t)funcPtr_ & ~cast(ptrdiff_t)1);
+        return cast(void*)( cast(ptrdiff_t)_funcPtr & ~cast(ptrdiff_t)1);
     }
     void hasObject(bool yes) @property
     {
-        funcPtr_ = cast(void*)(cast(ptrdiff_t) funcPtr_ | 1);
+        _funcPtr = cast(void*)(cast(ptrdiff_t) _funcPtr | 1);
     }
-    void* funcPtr_;
-    void* dataPtr_;
-    WeakRef obj_;
+    void* _funcPtr;
+    void* _dataPtr;
+    WeakRef _obj;
 
 
-    enum direct_ptr_flag = cast(void*)(~0);
-    enum strong_ptr_flag = null;
+    enum directPtrFlag = cast(void*)(~0);
 }
 
 
@@ -487,12 +516,12 @@ private struct WeakRef
         if (!o)
             return;
         InvisibleAddress addr = InvisibleAddress(cast(void*)o);
-        obj_=addr;
+        _obj = addr;
         rt_attachDisposeEvent(o, &unhook);
     }
     Object obj() @property const
     {
-        auto o = (cast(InvisibleAddress)atomicLoad(obj_)).address;
+        auto o = (cast(InvisibleAddress)atomicLoad(_obj)).address;
         if (GC.addrOf(o))
             return cast(Object)(o);
         return null;
@@ -518,9 +547,9 @@ private struct WeakRef
     }
     void unhook(Object o)
     {
-        atomicStore(obj_, InvisibleAddress(null));
+        atomicStore(_obj, InvisibleAddress(null));
     }
-    shared(InvisibleAddress) obj_;
+    shared(InvisibleAddress) _obj;
 }
 
 version(D_LP64) 
@@ -529,14 +558,14 @@ version(D_LP64)
     {
         this(void* o)
         {
-            addr_ = ~cast(ptrdiff_t)(o);
+            _addr = ~cast(ptrdiff_t)(o);
         }
         void* address() @property const
         {
-            return cast(void*) ~ addr_;
+            return cast(void*) ~ _addr;
         }
     private:
-        ptrdiff_t addr_ = ~ cast(ptrdiff_t) 0;
+        ptrdiff_t _addr = ~ cast(ptrdiff_t) 0;
     }
 }
 else 
@@ -546,16 +575,16 @@ else
         this(void* o)
         {
             auto tmp = cast(ptrdiff_t) cast(void*) o;
-            addr_high = (tmp>>16)&0x0000ffff | 0xffff0000; // Address relies in kernel space
-            addr_low = tmp&0x0000ffff | 0xffff0000;
+            _addrHigh = (tmp>>16)&0x0000ffff | 0xffff0000; // Address relies in kernel space
+            _addrLow = tmp&0x0000ffff | 0xffff0000;
         }
         void* address() @property const
         {
-            return cast(void*) (addr_high_<<16 | (addr_low_ & 0x0000ffff));
+            return cast(void*) (_addrHigh<<16 | (_addrLow & 0x0000ffff));
         }
     private:
-        ptrdiff_t addr_high_ = 0;
-        ptrdiff_t addr_low_ = 0;
+        ptrdiff_t _addrHigh = 0;
+        ptrdiff_t _addrLow = 0;
     }
 }
 
@@ -871,10 +900,10 @@ unittest
     Property prop;
     void delegate(int) dg = (val) => observe(val);
     prop.signal.strongConnect(dg);
-    assert(prop.signal.full.impl_.slots_.length==1);
+    assert(prop.signal.full._impl._slots.length==1);
     Observer o=new Observer;
     prop.signal.connect!"observe"(o);
-    assert(prop.signal.full.impl_.slots_.length==2);
+    assert(prop.signal.full._impl._slots.length==2);
     debug (signal) writeln("Triggering on original property with value 8 ...");
     prop=8;
     assert(o.count==1);
