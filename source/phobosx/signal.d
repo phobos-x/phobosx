@@ -179,7 +179,7 @@ struct RestrictedSignal(Args...)
       *     obj = Some object of a class implementing a method
       *     compatible with this signal.
       */
-    void connect(string method, ClassType)(ClassType obj) if(is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
+    void connect(string method, ClassType)(ClassType obj) if (is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
     in
     {
         assert(obj);
@@ -212,7 +212,7 @@ struct RestrictedSignal(Args...)
       *     method of obj. It can do any kind of parameter adjustments
       *     necessary.
      */
-    void connect(ClassType)(ClassType obj, void delegate(ClassType obj, Args) dg) if(is(ClassType == class))
+    void connect(ClassType)(ClassType obj, void delegate(ClassType obj, Args) dg) if (is(ClassType == class))
     in
     {
         assert(obj);
@@ -257,7 +257,7 @@ struct RestrictedSignal(Args...)
       * longer when emit is called.
       * Preconditions: Same as for direct connect.
       */
-    void disconnect(string method, ClassType)(ClassType obj) if(is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
+    void disconnect(string method, ClassType)(ClassType obj) if (is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
     in
     {
         assert(obj);
@@ -278,7 +278,7 @@ struct RestrictedSignal(Args...)
       * connections to a particular object use the overload which only
       * takes an object paramter.
      */
-    void disconnect(ClassType)(ClassType obj, void delegate(ClassType, T1) dg) if(is(ClassType == class))
+    void disconnect(ClassType)(ClassType obj, void delegate(ClassType, T1) dg) if (is(ClassType == class))
     in
     {
         assert(obj);
@@ -294,7 +294,7 @@ struct RestrictedSignal(Args...)
       *
       * All connections to obj made with calls to connect are removed. 
      */
-    void disconnect(ClassType)(ClassType obj) if(is(ClassType == class)) 
+    void disconnect(ClassType)(ClassType obj) if (is(ClassType == class)) 
     in
     {
         assert(obj);
@@ -348,13 +348,24 @@ private struct SignalImpl
     void emit(Args...)( Args args )
     {
         int emptyCount=0;
-        doEmit(_slots[0 .. $], 0, emptyCount, args);
-        _slots=_slots[0 .. $-emptyCount];
-        _slots.assumeSafeAppend();
+        auto myslots=slots; // Don't remove this! We need to keep an unmodified pointer on the stack!
+        if (!isEmitting)
+            isEmitting=true;
+        else
+            emptyCount=-1;
+        doEmit(myslots[0 .. $], 0, emptyCount, args);
+        if (emptyCount >= 0)
+        {
+            _slots=myslots[0 .. $-emptyCount]; // isEmitting mark is cleared now.
+            _slots.assumeSafeAppend();
+        }
     }
 
     void addSlot(Object obj, void delegate() dg)
     {
+        bool wasEmitting = isEmitting;
+        scope (exit) isEmitting = wasEmitting;
+        isEmitting = false;
         _slots.length++;
         _slots[$-1] = SlotImpl(obj, dg);
     }
@@ -370,6 +381,7 @@ private struct SignalImpl
 
     ~this()
     {
+        isEmitting = false;
         foreach (ref slot; _slots)
         {
             debug (signal) stderr.writeln("Destruction, removing some slot, signal: ", &this);
@@ -385,9 +397,11 @@ private struct SignalImpl
      */
     void removeSlot(bool delegate(const ref SlotImpl) isRemoved)
     {
-        import std.algorithm : filter;
+        bool wasEmitting = isEmitting;
+        scope (exit) isEmitting = wasEmitting;
+        isEmitting = false;
         foreach (ref slot; _slots)
-            if(isRemoved(slot))
+            if (isRemoved(slot))
                 slot = SlotImpl.init;
     }
 
@@ -400,19 +414,51 @@ private struct SignalImpl
     {
         int i=offset;
         immutable length=slots.length;
-        scope (exit) if(i<length-1) doEmit(slots, i+1, emptyCount, args); // Carry on.
-        
-        for(; i<length; i++)
-        {
-            if (!slots[i](args)) 
-                emptyCount++;
-            else if(emptyCount>0)
-                slots[i-emptyCount] = SlotImpl(slots[i]);
-        }
-
+        scope (exit) if (i<length-1) doEmit(slots, i+1, emptyCount, args); // Carry on.
+        if (emptyCount == -1)
+            for (; i<length; i++)
+                slots[i](args);
+        else
+            for (; i<length; i++)
+            {
+                if (!slots[i](args)) 
+                    emptyCount++;
+                else if (emptyCount>0)
+                    slots[i-emptyCount] = SlotImpl(slots[i]);
+            }
     }
 
+    /**
+     * We use the lsb of _slots.ptr for marking whether an emit is currently in progress.
+     *
+     * This is strictly speaking not allowed with GC managed memory
+     * (see: http://dlang.org/garbage.html), but if we keep a copy of
+     * the pointer on the stack which does not have the lsb set, we
+     * should be fine.
+     */
+    SlotImpl[] slots() @property
+    {
+        SlotImpl* mslots = _slots.ptr;
+        mslots = cast(SlotImpl*) (cast(ptrdiff_t) mslots &  ~ cast(ptrdiff_t) 1);
+        return mslots[0 .. _slots.length];
+    }
+    void isEmitting(bool yes) @property
+    {
+        SlotsABI* mslots = cast(SlotsABI*) &_slots;
+        if (yes)
+            mslots.ptr = cast(SlotImpl*)(cast(ptrdiff_t) mslots.ptr | 1);
+        else
+            mslots.ptr = cast(void*)(cast(ptrdiff_t) mslots.ptr & ~cast(ptrdiff_t) 1);
+    }
+    bool isEmitting() @property const
+    {
+        return cast(ptrdiff_t) _slots.ptr & 1;
+    }
     SlotImpl[] _slots;
+    struct SlotsABI { // Needed for writing _slots.ptr for our hacky mark thingy.
+        size_t length;
+        size_t ptr;
+    }
 }
 
 
@@ -474,7 +520,7 @@ private struct SlotImpl
         {
             void delegate(Args) mdg;
             mdg.funcptr=cast(void function(Args)) funcPtr;
-            if(hasObject)
+            if (hasObject)
                 mdg.ptr = o_addr;
             else
                 mdg.ptr = _dataPtr;
@@ -496,7 +542,10 @@ private:
     }
     void hasObject(bool yes) @property
     {
-        _funcPtr = cast(void*)(cast(ptrdiff_t) _funcPtr | 1);
+        if (yes)
+            _funcPtr = cast(void*)(cast(ptrdiff_t) _funcPtr | 1);
+        else
+            _funcPtr = cast(void*)(cast(ptrdiff_t) _funcPtr & ~cast(ptrdiff_t)1);
     }
     void* _funcPtr;
     void* _dataPtr;
@@ -929,7 +978,7 @@ unittest
     {
         Throwable t=e;
         int i=0;
-        while(t)
+        while (t)
         {
             debug (signal) stderr.writefln("Caught exception (this is fine)");
             assert(to!int(t.msg)==i);
@@ -939,7 +988,6 @@ unittest
         assert(i==3);
     }
 }
-version(none) // Disabled because of dmd @@@BUG5028@@@
 unittest
 {
     class A
