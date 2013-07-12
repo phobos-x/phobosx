@@ -326,21 +326,12 @@ struct RestrictedSignal(Args...)
 private struct SignalImpl
 {
     /**
-      * Forbit copying.
-      *
-      * As struct must be relocatable, it is not even possible to
-      * provide proper copy support for signals.
-      * rt_attachDisposeEvent is used for registering unhook. D's
-      * move semantics assume relocatable objects, which results in
-      * this(this) being called for one instance and the destructor
-      * for another, thus the wrong handlers are deregistered.  Not
-      * even destructive copy semantics are really possible, if you
-      * want to be safe, because of the explicit move() call.  So even
-      * if this(this) immediately drops the array and does not
-      * register unhook, D's assumption of relocatable objects is not
-      * matched, so move() for example will still simply swap contents
-      * of two structs resulting in the wrong unhook delegates being
-      * unregistered.
+      * Forbid copying.
+      * Unlike the old implementations, it now is theoretically
+      * possible to copy a signal. Even different semantics are
+      * possible. But none of the possible semantics are what the user
+      * intended in all cases, so I believe it is still the safer
+      * choice to simply disallow copying.
       */
     @disable this(this);
     /// Forbit copying, it does not work. See this(this).
@@ -602,6 +593,21 @@ private:
 // Provides a way of holding a reference to an object, without the GC seeing it.
 private struct WeakRef
 {
+    /**
+     * As struct must be relocatable, it is not even possible to
+     * provide proper copy support for WeakRef.  rt_attachDisposeEvent
+     * is used for registering unhook. D's move semantics assume
+     * relocatable objects, which results in this(this) being called
+     * for one instance and the destructor for another, thus the wrong
+     * handlers are deregistered.  D's assumption of relocatable
+     * objects is not matched, so move() for example will still simply
+     * swap contents of two structs, resulting in the wrong unhook
+     * delegates being unregistered.
+
+     * Unfortunately the runtime still blindly copies WeakRefs if they
+     * are in a dynamic array and reallocation is needed. This case
+     * has to be handled separately.
+     */
     @disable this(this);
     @disable void opAssign(WeakRef other);
     void construct(Object o) 
