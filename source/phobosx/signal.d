@@ -57,6 +57,7 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
  *
  * Example:
  ---
+ import std.stdio;
  class MyObject
  {
      mixin(signal!(string, int)("valueChanged"));
@@ -89,11 +90,11 @@ void main()
     Observer o = new Observer;
 
     a.value = 3;                // should not call o.watch()
-    a.connect(&o.watch);        // o.watch is the slot
+    a.valueChanged.connect!"watch"(o);        // o.watch is the slot
     a.value = 4;                // should call o.watch()
-    a.disconnect(&o.watch);     // o.watch is no longer a slot
+    a.valueChanged.disconnect!"watch"(o);     // o.watch is no longer a slot
     a.value = 5;                // so should not call o.watch()
-    a.connect(&o.watch);        // connect again
+    a.valueChanged.connect!"watch"(o);        // connect again
     a.value = 6;                // should call o.watch()
     destroy(o);                 // destroying o should automatically disconnect it
     a.value = 7;                // should not call o.watch()
@@ -350,13 +351,16 @@ private struct SignalImpl
         int emptyCount=0;
         auto myslots=slots; // Don't remove this! We need to keep an unmodified pointer on the stack!
         if (!isEmitting)
-            isEmitting=true;
-        else
-            emptyCount=-1;
-        doEmit(myslots[0 .. $], 0, emptyCount, args);
-        if (emptyCount >= 0)
         {
-            _slots=myslots[0 .. $-emptyCount]; // isEmitting mark is cleared now.
+            isEmitting = true;
+            scope (exit) isEmitting = false;
+        }
+        else
+            emptyCount = -1;
+        doEmit(myslots[0 .. $], 0, emptyCount, args);
+        if (emptyCount > 0)
+        {
+            _slots=myslots[0 .. $-emptyCount]; 
             _slots.assumeSafeAppend();
         }
     }
@@ -367,11 +371,12 @@ private struct SignalImpl
         scope (exit) isEmitting = wasEmitting;
         isEmitting = false;
         _slots.length++;
-        _slots[$-1] = SlotImpl(obj, dg);
+        _slots[$-1].construct(obj, dg);
     }
     void removeSlot(Object obj, void delegate() dg)
     {
-        auto removal = SlotImpl(obj, dg);
+        SlotImpl removal;
+        removal.construct(obj, dg);
         removeSlot((const ref SlotImpl item) => removal is item);
     }
     void removeSlot(Object obj) 
@@ -384,10 +389,9 @@ private struct SignalImpl
         isEmitting = false;
         foreach (ref slot; _slots)
         {
-            debug (signal) stderr.writeln("Destruction, removing some slot, signal: ", &this);
-            slot = SlotImpl.init; // Force destructor to trigger (copy is disabled)
-            // This is needed because ATM the GC won't trigger struct
-            // destructors to be run when within a GC managed array.
+            debug (signal) { import std.stdio; stderr.writeln("Destruction, removing some slot, signal: ", &this); }
+            slot.reset(); // This is needed because ATM the GC won't trigger struct
+                        // destructors to be run when within a GC managed array.
         }
     }
 /// Little helper functions:
@@ -402,7 +406,7 @@ private struct SignalImpl
         isEmitting = false;
         foreach (ref slot; _slots)
             if (isRemoved(slot))
-                slot = SlotImpl.init;
+                slot.reset();
     }
 
     /**
@@ -410,10 +414,10 @@ private struct SignalImpl
      * All exceptions that occur will be chained.
      * Any invalid slots (GC collected or removed) will be dropped.
      */
-    void doEmit(Args...)( SlotImpl[] slots, int offset, ref int emptyCount, Args args )
+    static void doEmit(Args...)( SlotImpl[] slots, int offset, ref int emptyCount, Args args )
     {
         int i=offset;
-        immutable length=slots.length;
+        immutable ptrdiff_t length=slots.length;
         scope (exit) if (i<length-1) doEmit(slots, i+1, emptyCount, args); // Carry on.
         if (emptyCount == -1)
             for (; i<length; i++)
@@ -424,7 +428,7 @@ private struct SignalImpl
                 if (!slots[i](args)) 
                     emptyCount++;
                 else if (emptyCount>0)
-                    slots[i-emptyCount] = SlotImpl(slots[i]);
+                    slots[i-emptyCount].moveFrom(slots[i]);
             }
     }
 
@@ -468,12 +472,15 @@ private struct SignalImpl
 private struct SlotImpl 
 {
     @disable this(this);
+    @disable void opAssign(SlotImpl other);
     
     /// Pass null for o if you have a strong ref delegate.
     /// dg.funcptr must not point to heap memory.
-    this(Object o, void delegate() dg) 
+    void construct(Object o, void delegate() dg)
+    in { assert(this is SlotImpl.init); }
+    body
     {
-        _obj = WeakRef(o);
+        _obj.construct(o);
         _dataPtr = dg.ptr;
         _funcPtr = dg.funcptr;
         assert(GC.addrOf(_funcPtr) is null, "Your function is implemented on the heap? Such dirty tricks are not supported with std.signal!");
@@ -485,12 +492,16 @@ private struct SlotImpl
     /**
      * Implement proper explict move.
      */
-    this(ref SlotImpl other) {
+    void moveFrom(ref SlotImpl other)
+    in { assert(this is SlotImpl.init); }
+    body
+    {
         auto o = other.obj;
-        _obj = WeakRef(o);
+        _obj.construct(o);
         _dataPtr = other._dataPtr;
         _funcPtr = other._funcPtr;
-        other = SlotImpl.init; // Destroy original!
+        other.reset(); // Destroy original!
+        
     }
     @property Object obj() const
     {
@@ -535,6 +546,14 @@ private struct SlotImpl
         }
         return true;
     }
+    /**
+     * Reset this instance to its intial value.
+     */   
+    void reset() {
+        _funcPtr = SlotImpl.init._funcPtr;
+        _dataPtr = SlotImpl.init._dataPtr;
+        _obj.reset();
+    }
 private:
     void* funcPtr() @property const
     {
@@ -560,7 +579,10 @@ private:
 private struct WeakRef
 {
     @disable this(this);
-    this(Object o) 
+    @disable void opAssign(WeakRef other);
+    void construct(Object o) 
+    in { assert(this is WeakRef.init); }
+    body
     {
         debug (signal) createdThis=&this;
         if (!o)
@@ -576,9 +598,10 @@ private struct WeakRef
             return cast(Object)(o);
         return null;
     }
-    
-    ~this()
-    {
+    /**
+     * Reset this instance to its intial value.
+     */   
+    void reset() {
         auto o = obj;
         if (o)
         {
@@ -586,12 +609,18 @@ private struct WeakRef
             unhook(o);
         }
     }
+    
+    ~this()
+    {
+        reset();
+    }
     private:
     debug (signal)
     {
     invariant()
     {
-        assert(&this is createdThis, "We changed address! This should really not happen!");
+        import std.conv : text;
+        assert(!createdThis || &this is createdThis, text("We changed address! This should really not happen! Orig address: ", cast(void*)createdThis, " new address: ", cast(void*)&this));
     }
     WeakRef* createdThis;
     }
@@ -612,6 +641,8 @@ version(D_LP64)
         }
         void* address() @property const
         {
+            debug ( signal) { import std.stdio; writeln("_addr: ", _addr);}
+            debug ( signal) { import std.stdio; writeln("~_addr: ", ~_addr);}
             return cast(void*) ~ _addr;
         }
     private:
@@ -637,9 +668,53 @@ else
         ptrdiff_t _addrLow = 0;
     }
 }
+unittest { // Check that above example really works ...
+    debug (signal) import std.stdio;
+    class MyObject
+    {
+        mixin(signal!(string, int)("valueChanged"));
+
+        int value() @property { return _value; }
+        int value(int v) @property
+        {
+            if (v != _value)
+            {
+                _value = v;
+                // call all the connected slots with the two parameters
+                _valueChanged.emit("setting new value", v);
+            }
+            return v;
+        }
+    private:
+        int _value;
+    }
+
+    class Observer
+    {   // our slot
+        void watch(string msg, int i)
+        {
+            debug (signal) writefln("Observed msg '%s' and value %s", msg, i);
+        }
+    }
+
+    auto a = new MyObject;
+    Observer o = new Observer;
+
+    a.value = 3;                // should not call o.watch()
+    a.valueChanged.connect!"watch"(o);        // o.watch is the slot
+    a.value = 4;                // should call o.watch()
+    a.valueChanged.disconnect!"watch"(o);     // o.watch is no longer a slot
+    a.value = 5;                // so should not call o.watch()
+    a.valueChanged.connect!"watch"(o);        // connect again
+    a.value = 6;                // should call o.watch()
+    destroy(o);                 // destroying o should automatically disconnect it
+    a.value = 7;                // should not call o.watch()
+
+}
 
 unittest
 {
+    debug (signal) import std.stdio;
     class Observer
     {
         void watch(string msg, int i)
@@ -964,6 +1039,7 @@ unittest
 }
 unittest 
 {
+    debug (signal) import std.stdio;
     import std.conv;
     FullSignal!() s1;
     void testfunc(int id) 
