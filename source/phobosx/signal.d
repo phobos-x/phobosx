@@ -370,14 +370,22 @@ private struct SignalImpl
         bool wasEmitting = isEmitting;
         scope (exit) isEmitting = wasEmitting;
         isEmitting = false;
-        _slots.length++;
+        if (_slots.capacity <= _slots.length)
+        {
+            auto buf = new SlotImpl[_slots.length+1];
+            foreach (i, ref slot ; _slots)
+                buf[i].moveFrom(slot);
+            _slots = buf;
+        }
+        else
+            _slots.length++;
         _slots[$-1].construct(obj, dg);
     }
     void removeSlot(Object obj, void delegate() dg)
     {
         SlotImpl removal;
         removal.construct(obj, dg);
-        removeSlot((const ref SlotImpl item) => removal is item);
+        removeSlot((const ref SlotImpl item) => item.wasConstructedFrom(obj, dg));
     }
     void removeSlot(Object obj) 
     {
@@ -389,7 +397,7 @@ private struct SignalImpl
         isEmitting = false;
         foreach (ref slot; _slots)
         {
-            debug (signal) { import std.stdio; stderr.writeln("Destruction, removing some slot, signal: ", &this); }
+            debug (signal) { import std.stdio; stderr.writefln("Destruction, removing some slot(%s, weakref: %s), signal: ", &slot, &slot._obj, &this); }
             slot.reset(); // This is needed because ATM the GC won't trigger struct
                         // destructors to be run when within a GC managed array.
         }
@@ -428,7 +436,10 @@ private struct SignalImpl
                 if (!slots[i](args)) 
                     emptyCount++;
                 else if (emptyCount>0)
+                {
+                    debug (signal) slots[i-emptyCount].reset();
                     slots[i-emptyCount].moveFrom(slots[i]);
+                }
             }
     }
 
@@ -484,10 +495,23 @@ private struct SlotImpl
         _dataPtr = dg.ptr;
         _funcPtr = dg.funcptr;
         assert(GC.addrOf(_funcPtr) is null, "Your function is implemented on the heap? Such dirty tricks are not supported with std.signal!");
-        if (o && _dataPtr is cast(void*) o) 
-            _dataPtr = directPtrFlag;
-        else if (!o)
-            hasObject=false;
+        if (o)
+        {
+            if (_dataPtr is cast(void*) o) 
+                _dataPtr = directPtrFlag;
+            hasObject = true;
+        }
+    }
+
+    /**
+     * Check whether this slot was constructed from object o and delegate dg.
+     */
+    bool wasConstructedFrom(Object o, void delegate() dg) const
+    {
+        if ( o && dg.ptr is cast(void*) o)
+            return obj is o && _dataPtr is directPtrFlag && funcPtr is dg.funcptr;
+        else
+            return obj is o && _dataPtr is dg.ptr && funcPtr is dg.funcptr;
     }
     /**
      * Implement proper explict move.
@@ -531,6 +555,8 @@ private struct SlotImpl
         {
             void delegate(Args) mdg;
             mdg.funcptr=cast(void function(Args)) funcPtr;
+            debug (signal) { import std.stdio; writefln("hasObject: %s, o_addr: %s, dataPtr: %s", hasObject, o_addr, _dataPtr);}
+            assert((hasObject && _dataPtr is directPtrFlag) || (!hasObject && _dataPtr !is directPtrFlag));
             if (hasObject)
                 mdg.ptr = o_addr;
             else
@@ -585,15 +611,18 @@ private struct WeakRef
     body
     {
         debug (signal) createdThis=&this;
+        debug (signal) { import std.stdio; writefln("WeakRef.construct for %s and object: %s", &this, o); }
         if (!o)
             return;
-        InvisibleAddress addr = InvisibleAddress(cast(void*)o);
-        _obj = addr;
+        _obj = InvisibleAddress(cast(void*)o);
         rt_attachDisposeEvent(o, &unhook);
     }
     Object obj() @property const
     {
-        auto o = (cast(InvisibleAddress)atomicLoad(_obj)).address;
+        version (none) auto tmp = cast(InvisibleAddress) atomicLoad(_obj); // Does not work
+        auto tmp = cast(InvisibleAddress) _obj;
+        auto o = tmp.address;
+        debug (signal) { import std.stdio; writefln("WeakRef.obj for %s and object: %s", &this, o); }
         if (GC.addrOf(o))
             return cast(Object)(o);
         return null;
@@ -603,11 +632,13 @@ private struct WeakRef
      */   
     void reset() {
         auto o = obj;
+        debug (signal) { import std.stdio; writefln("WeakRef.reset for %s and object: %s", &this, o); }
         if (o)
         {
             rt_detachDisposeEvent(obj, &unhook);
             unhook(o);
         }
+        debug (signal) createdThis = null;
     }
     
     ~this()
@@ -620,13 +651,14 @@ private struct WeakRef
     invariant()
     {
         import std.conv : text;
-        assert(!createdThis || &this is createdThis, text("We changed address! This should really not happen! Orig address: ", cast(void*)createdThis, " new address: ", cast(void*)&this));
+        assert(createdThis is null || &this is createdThis, text("We changed address! This should really not happen! Orig address: ", cast(void*)createdThis, " new address: ", cast(void*)&this));
     }
     WeakRef* createdThis;
     }
     void unhook(Object o)
     {
-        atomicStore(_obj, InvisibleAddress(null));
+        version (none) atomicStore(_obj, InvisibleAddress(null));
+        _obj = InvisibleAddress(null);
     }
     shared(InvisibleAddress) _obj;
 }
@@ -638,11 +670,13 @@ version(D_LP64)
         this(void* o)
         {
             _addr = ~cast(ptrdiff_t)(o);
+            debug (signal) debug (3) { import std.stdio; writeln("Constructor _addr: ", _addr);}
+            debug (signal) debug (3) { import std.stdio; writeln("Constructor ~_addr: ", ~_addr);}
         }
         void* address() @property const
         {
-            debug ( signal) { import std.stdio; writeln("_addr: ", _addr);}
-            debug ( signal) { import std.stdio; writeln("~_addr: ", ~_addr);}
+            debug (signal) debug (3) { import std.stdio; writeln("_addr: ", _addr);}
+            debug (signal) debug (3) { import std.stdio; writeln("~_addr: ", ~_addr);}
             return cast(void*) ~ _addr;
         }
     private:
