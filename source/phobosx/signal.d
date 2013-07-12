@@ -20,7 +20,7 @@
  * I shamelessly stole some ideas of: http://forum.dlang.org/thread/jjote0$1cql$1@digitalmars.com
  * written by Alex Rønne Petersen.
  */
-module std.signal;
+module phobosx.signal;
 
 import core.atomic;
 import core.memory;
