@@ -383,8 +383,6 @@ private struct SignalImpl
     }
     void removeSlot(Object obj, void delegate() dg)
     {
-        SlotImpl removal;
-        removal.construct(obj, dg);
         removeSlot((const ref SlotImpl item) => item.wasConstructedFrom(obj, dg));
     }
     void removeSlot(Object obj) 
