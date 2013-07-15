@@ -31,6 +31,8 @@ private alias void delegate(Object) DisposeEvt;
 private extern (C) void  rt_attachDisposeEvent( Object obj, DisposeEvt evt );
 private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
 //debug=signal;
+// http://d.puremagic.com/issues/show_bug.cgi?id=10645
+version=bug10645;
 
 
 /**
@@ -603,13 +605,16 @@ private struct WeakRef
         debug (signal) { import std.stdio; writefln("WeakRef.construct for %s and object: %s", &this, o); }
         if (!o)
             return;
-        _obj = InvisibleAddress(cast(void*)o);
+        _obj = InvisibleAddress.construct(cast(void*)o);
         rt_attachDisposeEvent(o, &unhook);
     }
     Object obj() @property const
     {
-        version (none) auto tmp = cast(InvisibleAddress) atomicLoad(_obj); // Does not work
-        auto tmp = cast(InvisibleAddress) _obj;
+        version (all)
+            auto tmp =  atomicLoad(_obj); // Does not work with constructor
+        else
+            auto tmp = cast(InvisibleAddress) _obj;
+        debug (signal) { import std.stdio; writefln("Loaded %s, should be: %s", tmp, cast(InvisibleAddress)_obj); }
         auto o = tmp.address;
         debug (signal) { import std.stdio; writefln("WeakRef.obj for %s and object: %s", &this, o); }
         if (GC.addrOf(o))
@@ -646,8 +651,10 @@ private struct WeakRef
     }
     void unhook(Object o)
     {
-        version (none) atomicStore(_obj, InvisibleAddress(null));
-        _obj = InvisibleAddress(null);
+        version (all)
+            atomicStore(_obj, InvisibleAddress.construct(null));
+        else
+            _obj = InvisibleAddress(null);
     }
     shared(InvisibleAddress) _obj;
 }
@@ -656,17 +663,32 @@ version(D_LP64)
 {
     struct InvisibleAddress
     {
-        this(void* o)
+        version(bug10645)
         {
-            _addr = ~cast(ptrdiff_t)(o);
-            debug (signal) debug (3) { import std.stdio; writeln("Constructor _addr: ", _addr);}
-            debug (signal) debug (3) { import std.stdio; writeln("Constructor ~_addr: ", ~_addr);}
+            static InvisibleAddress construct(void* o)
+            {
+                return InvisibleAddress(~cast(ptrdiff_t)o);
+            }
+        }
+        else
+        {
+            this(void* o)
+            {
+                _addr = ~cast(ptrdiff_t)(o);
+                debug (signal) debug (3) { import std.stdio; writeln("Constructor _addr: ", _addr);}
+                debug (signal) debug (3) { import std.stdio; writeln("Constructor ~_addr: ", ~_addr);}
+            }
         }
         void* address() @property const
         {
             debug (signal) debug (3) { import std.stdio; writeln("_addr: ", _addr);}
             debug (signal) debug (3) { import std.stdio; writeln("~_addr: ", ~_addr);}
             return cast(void*) ~ _addr;
+        }
+        debug(signal)        string toString()
+        {
+            import std.conv : text;
+            return text(address);
         }
     private:
         ptrdiff_t _addr = ~ cast(ptrdiff_t) 0;
@@ -676,15 +698,33 @@ else
 {
     struct InvisibleAddress
     {
-        this(void* o)
+        version(bug10645)
         {
-            auto tmp = cast(ptrdiff_t) cast(void*) o;
-            _addrHigh = (tmp>>16)&0x0000ffff | 0xffff0000; // Address relies in kernel space
-            _addrLow = tmp&0x0000ffff | 0xffff0000;
+            static InvisibleAddress construct(void* o)
+            {
+                auto tmp = cast(ptrdiff_t) cast(void*) o;
+                auto addrHigh = (tmp>>16)&0x0000ffff | 0xffff0000; // Address relies in kernel space
+                auto addrLow = tmp&0x0000ffff | 0xffff0000;
+                return InvisibleAddress(addrHigh, addrLow);
+            }
+        }
+        else
+        {
+            this(void* o)
+            {
+                auto tmp = cast(ptrdiff_t) cast(void*) o;
+                _addrHigh = (tmp>>16)&0x0000ffff | 0xffff0000; // Address relies in kernel space
+                _addrLow = tmp&0x0000ffff | 0xffff0000;
+            }
         }
         void* address() @property const
         {
             return cast(void*) (_addrHigh<<16 | (_addrLow & 0x0000ffff));
+        }
+        debug(signal)        string toString()
+        {
+            import std.conv : text;
+            return text(address);
         }
     private:
         ptrdiff_t _addrHigh = 0;
