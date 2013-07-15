@@ -643,15 +643,26 @@ private struct WeakRef
     }
     Object obj() @property const
     {
-        version (all)
+        void* o = null;
+        // Two iterations are necessary, because after the atomic load
+        // we still have an invisible address, thus the GC can reset
+        // _obj after we already retrieved the data. Also the call to
+        // GC.addrOf needs to be done twice, otherwise still segfaults
+        // still happen. With two iterations I wasn't able to trigger
+        // any segfault with test/testheisenbug.d. The assertion in
+        // Observer.watch never triggered anyways with this
+        // implementation.
+        foreach ( i ; 0..2)
+        {
             auto tmp =  atomicLoad(_obj); // Does not work with constructor
-        else
-            auto tmp = cast(InvisibleAddress) _obj;
-        debug (signal) { import std.stdio; writefln("Loaded %s, should be: %s", tmp, cast(InvisibleAddress)_obj); }
-        auto o = tmp.address;
-        debug (signal) { import std.stdio; writefln("WeakRef.obj for %s and object: %s", &this, o); }
-        if (GC.addrOf(o))
-            return cast(Object)(o);
+            debug (signal) { import std.stdio; writefln("Loaded %s, should be: %s", tmp, cast(InvisibleAddress)_obj); }
+            o = GC.addrOf(tmp.address);
+        }
+        if (o)
+        {
+            assert(GC.addrOf(o), "Not possible!");
+            return cast(Object)o;
+        }
         return null;
     }
     /**
@@ -662,7 +673,7 @@ private struct WeakRef
         debug (signal) { import std.stdio; writefln("WeakRef.reset for %s and object: %s", &this, o); }
         if (o)
         {
-            rt_detachDisposeEvent(obj, &unhook);
+            rt_detachDisposeEvent(o, &unhook);
             unhook(o);
         }
         debug (signal) createdThis = null;
