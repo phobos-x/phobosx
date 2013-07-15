@@ -108,7 +108,7 @@ void main()
  * Observed msg 'setting new value' and value 6
  * </pre>
  */
-string signal(Args...)(string name, string protection="private")
+string signal(Args...)(string name, string protection="private") @safe
 {
      string argList="(";
      import std.traits : fullyQualifiedName;
@@ -154,7 +154,7 @@ struct Signal(Args...)
      * If you remove a slot during emit() it won't be called in the
      * current run if it wasn't already.
      */
-    void emit( Args args )
+    void emit( Args args ) @trusted
     {
         restricted_._impl.emit(args);
     }
@@ -162,7 +162,7 @@ struct Signal(Args...)
     /**
      * Get access to the rest of the signals functionality.
      */
-    ref RestrictedSignal!(Args) restricted() @property
+    ref RestrictedSignal!(Args) restricted() @property @trusted
     {
         return restricted_;
     }
@@ -196,7 +196,8 @@ struct RestrictedSignal(Args...)
       *     obj = Some object of a class implementing a method
       *     compatible with this signal.
       */
-    void connect(string method, ClassType)(ClassType obj) if (is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
+    void connect(string method, ClassType)(ClassType obj) @trusted
+        if (is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);})) 
     in
     {
         assert(obj);
@@ -229,7 +230,8 @@ struct RestrictedSignal(Args...)
       *     method of obj. It can do any kind of parameter adjustments
       *     necessary.
      */
-    void connect(ClassType)(ClassType obj, void delegate(ClassType obj, Args) dg) if (is(ClassType == class))
+    void connect(ClassType)(ClassType obj, void delegate(ClassType obj, Args) dg) @trusted
+        if (is(ClassType == class)) 
     in
     {
         assert(obj);
@@ -256,7 +258,7 @@ struct RestrictedSignal(Args...)
       * Params:
       *     dg = The delegate to be connected.
       */
-    void strongConnect(void delegate(Args) dg)
+    void strongConnect(void delegate(Args) dg) @trusted
     in
     {
         assert(dg);
@@ -274,7 +276,8 @@ struct RestrictedSignal(Args...)
       * longer when emit is called.
       * Preconditions: Same as for direct connect.
       */
-    void disconnect(string method, ClassType)(ClassType obj) if (is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
+    void disconnect(string method, ClassType)(ClassType obj) @trusted
+        if (is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
     in
     {
         assert(obj);
@@ -295,7 +298,8 @@ struct RestrictedSignal(Args...)
       * connections to a particular object use the overload which only
       * takes an object paramter.
      */
-    void disconnect(ClassType)(ClassType obj, void delegate(ClassType, T1) dg) if (is(ClassType == class))
+    void disconnect(ClassType)(ClassType obj, void delegate(ClassType, T1) dg) @trusted
+        if (is(ClassType == class))
     in
     {
         assert(obj);
@@ -311,7 +315,7 @@ struct RestrictedSignal(Args...)
       *
       * All connections to obj made with calls to connect are removed. 
      */
-    void disconnect(ClassType)(ClassType obj) if (is(ClassType == class)) 
+    void disconnect(ClassType)(ClassType obj) @trusted if (is(ClassType == class))
     in
     {
         assert(obj);
@@ -326,7 +330,7 @@ struct RestrictedSignal(Args...)
       *
       * Disconnects all connections to dg.
       */
-    void strongDisconnect(void delegate(Args) dg)
+    void strongDisconnect(void delegate(Args) dg) @trusted
     in
     {
         assert(dg);
