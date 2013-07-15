@@ -50,7 +50,7 @@ version=bug10645;
  *   
  *   protection = Can be any valid protection specifier like
  *   "private", "protected", "package" or in addition "none". Default
- *   is "private". It specifies the protection of the struct instance,
+ *   is "private". It specifies the protection of the Signal instance,
  *   if none is given, private is used and the ref returning function
  *   will return a Signal instead of a RestrictedSignal. The
  *   protection of the accessor method is specified by the surrounding
@@ -137,18 +137,20 @@ string signal(Args...)(string name, string protection="private") @safe {
  * and the sender does not need to know anything about the
  * receivers. The sender will just call emit when something happens,
  * the signal takes care of notifing all interested parties. By using
- * wrapper delegates/functions not even the function signature of
+ * wrapper delegates/functions, not even the function signature of
  * sender/receiver need to match. Another consequence of this very
  * loose coupling is, that a connected object will be freed by the GC
  * if all references to it are dropped, even if it is still connected
- * to a signal. The connection will simply be dropped. If this wasn't
+ * to a signal, the connection will simply be dropped. If this wasn't
  * the case you'd either end up managing connections by hand, soon
  * asking yourself why you are using a language with a GC and then
  * still have to handle the life time of your objects manually or you
  * don't care which results in memory leaks. If in your application
  * the connections made by a signal are not that loose you can use
  * strongConnect(), in this case the GC won't free your object until
- * it was disconnected from the signal or the signal got destroyed by itself.
+ * it was disconnected from the signal or the signal got itself destroyed.
+ *
+ * This struct is not thread-safe.
  */
 struct Signal(Args...)
 {
@@ -166,10 +168,14 @@ struct Signal(Args...)
      * The slots are called in the same sequence as they were registered.
      *
      * emit also takes care of actually removing dead connections. For
-     * concurrency reasons they are set just to invalid state by the GC.
+     * concurrency reasons they are set just to an invalid state by the GC.
      *
      * If you remove a slot during emit() it won't be called in the
      * current run if it wasn't already.
+     *
+     * If you add a slot during emit() it will be called in the
+     * current emit() run. Note however Signal is not thread-safe, "called
+     * during emit" basically means called from within a slot.
      */
     void emit( Args args ) @trusted
     {
