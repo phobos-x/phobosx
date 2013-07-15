@@ -5,7 +5,6 @@
  * Essentially, when a Signal is emitted, a list of connected Observers
  * (called slots) are called.
  *
- *
  * Copyright: Copyright Robert Klotzner 2012 - 2013.
  * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
  * Authors:   Robert Klotzner
@@ -108,8 +107,9 @@ void main()
  * Observed msg 'setting new value' and value 6
  * </pre>
  */
-string signal(Args...)(string name, string protection="private") @safe
-{
+string signal(Args...)(string name, string protection="private") @safe {
+    assert(protection == "public" || protection == "private" || protection == "package" || protection == "protected" || protection == "none", "Invalid protection specified, must be either: public, private, package, protected or none");
+
      string argList="(";
      import std.traits : fullyQualifiedName;
      foreach (arg; Args)
@@ -126,13 +126,29 @@ string signal(Args...)(string name, string protection="private") @safe
      return output;
  }
 
-debug (signal) pragma(msg, signal!int("haha"));
-
 /**
  * Full signal implementation.
  *
  * It implements the emit function for all other functionality it has
  * this aliased to RestrictedSignal.
+ *
+ * A signal is a way to couple components together in a very loose
+ * way. The receiver does not need to know anything about the sender
+ * and the sender does not need to know anything about the
+ * receivers. The sender will just call emit when something happens,
+ * the signal takes care of notifing all interested parties. By using
+ * wrapper delegates/functions not even the function signature of
+ * sender/receiver need to match. Another consequence of this very
+ * loose coupling is, that a connected object will be freed by the GC
+ * if all references to it are dropped, even if it is still connected
+ * to a signal. The connection will simply be dropped. If this wasn't
+ * the case you'd either end up managing connections by hand, soon
+ * asking yourself why you are using a language with a GC and then
+ * still have to handle the life time of your objects manually or you
+ * don't care which results in memory leaks. If in your application
+ * the connections made by a signal are not that loose you can use
+ * strongConnect(), in this case the GC won't free your object until
+ * it was disconnected from the signal or the signal got destroyed by itself.
  */
 struct Signal(Args...)
 {
@@ -144,12 +160,13 @@ struct Signal(Args...)
      * All connected slots which are still alive will be called.  If
      * any of the slots throws an exception, the other slots will
      * still be called. You'll receive a chained exception with all
-     * exceptions that were thrown.
+     * exceptions that were thrown. Thus slots won't influence each
+     * others execution.
      *
      * The slots are called in the same sequence as they were registered.
      *
      * emit also takes care of actually removing dead connections. For
-     * concurrency reasons they are set just to invalid by the GC.
+     * concurrency reasons they are set just to invalid state by the GC.
      *
      * If you remove a slot during emit() it won't be called in the
      * current run if it wasn't already.
@@ -209,8 +226,8 @@ struct RestrictedSignal(Args...)
     /**
       * Indirect connection to an object.
       *
-      * Use this overload if you want to connect to an object method
-      * which does not match the signals signature.  You can provide
+      * Use this overload if you want to connect to an object's method
+      * which does not match the signal's signature.  You can provide
       * any delegate to do the parameter adaption, but make sure your
       * delegates' context does not contain a reference to the target
       * object, instead use the provided obj parameter, where the
@@ -246,9 +263,9 @@ struct RestrictedSignal(Args...)
     /**
       * Connect with strong ref semantics.
       *
-      * Use this overload if you either really really want strong ref
+      * Use this overload if you either really, really want strong ref
       * semantics for some reason or because you want to connect some
-      * non-class method delegate. Whatever the delegates context
+      * non-class method delegate. Whatever the delegates' context
       * references, will stay in memory as long as the signals
       * connection is not removed and the signal gets not destroyed
       * itself.
@@ -272,7 +289,7 @@ struct RestrictedSignal(Args...)
     /**
       * Disconnect a direct connection.
       *
-      * After issuing this call method of obj won't be triggered any
+      * After issuing this call, methods of obj won't be triggered any
       * longer when emit is called.
       * Preconditions: Same as for direct connect.
       */
@@ -660,6 +677,9 @@ private struct WeakRef
         {
             auto tmp =  atomicLoad(_obj); // Does not work with constructor
             debug (signal) { import std.stdio; writefln("Loaded %s, should be: %s", tmp, cast(InvisibleAddress)_obj); }
+            o = tmp.address;
+            if ( o is null)
+                return null; // Nothing to do then.
             o = GC.addrOf(tmp.address);
         }
         if (o)
@@ -845,7 +865,8 @@ unittest {
         writeln("Slot array tests passed!");
     }
 }
-unittest { // Check that above example really works ...
+unittest
+{ // Check that above example really works ...
     debug (signal) import std.stdio;
     class MyObject
     {
@@ -1159,8 +1180,6 @@ unittest {
     a.value6 = 46;
 }
 
-version(none)
-{ // Disabled because of dmd @@@BUG7758@@@
 unittest 
 {
     import std.stdio;
@@ -1204,16 +1223,16 @@ unittest
     Property prop;
     void delegate(int) dg = (val) => observe(val);
     prop.signal.strongConnect(dg);
-    assert(prop.signal.full._impl._slots.length==1);
+    assert(prop.signal._impl._slots.length==1);
     Observer o=new Observer;
     prop.signal.connect!"observe"(o);
-    assert(prop.signal.full._impl._slots.length==2);
+    assert(prop.signal._impl._slots.length==2);
     debug (signal) writeln("Triggering on original property with value 8 ...");
     prop=8;
     assert(o.count==1);
     assert(o.observed==prop);
 }
-}
+
 unittest 
 {
     debug (signal) import std.stdio;
@@ -1251,6 +1270,67 @@ unittest
     class B : A
     {
         mixin(signal!(string, int)("s2"));
+    }
+}
+
+unittest
+{
+    struct Test
+    {
+        mixin(signal!int("a", "public"));
+        mixin(signal!int("ap", "private"));
+        mixin(signal!int("app", "protected"));
+        mixin(signal!int("an", "none"));
+    }
+    debug (signal)
+    {
+        pragma(msg, signal!int("a", "public"));
+        pragma(msg, signal!(int, string, int[int])("a", "private"));
+        pragma(msg, signal!(int, string, int[int], float, double)("a", "protected"));
+        pragma(msg, signal!(int, string, int[int], float, double, long)("a", "none"));
+    }
+}
+
+unittest // Test nested emit/removal/addition ...
+{
+    Signal!() sig;
+    bool doEmit = true;
+    int counter = 0;
+    int slot3called = 0;
+    int slot3shouldcalled = 0;
+    void slot1()
+    {
+        doEmit = !doEmit;
+        if(!doEmit)
+            sig.emit();
+    }
+    void slot3()
+    {
+        slot3called++;
+    }
+    void slot2()
+    {
+        debug (signal) { import std.stdio; writefln("\nCALLED: %s, should called: %s", slot3called, slot3shouldcalled);}
+        assert (slot3called == slot3shouldcalled);
+        if ( ++counter < 100) 
+            slot3shouldcalled += counter;
+        if ( counter < 100 )
+            sig.strongConnect(&slot3);
+    }
+    void slot4()
+    {
+        if ( counter == 100 )
+            sig.strongDisconnect(&slot3); // All connections dropped
+    }
+    sig.strongConnect(&slot1);
+    sig.strongConnect(&slot2);
+    sig.strongConnect(&slot4);
+    for(int i=0; i<1000; i++)
+        sig.emit();
+    debug (signal)
+    {
+        import std.stdio;
+        writeln("slot3called: ", slot3called);
     }
 }
 /* vim: set ts=4 sw=4 expandtab : */
