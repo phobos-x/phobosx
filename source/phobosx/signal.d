@@ -8,7 +8,6 @@
  * Copyright: Copyright Robert Klotzner 2012 - 2013.
  * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
  * Authors:   Robert Klotzner
- * Source:    $(PHOBOSSRC std/_signal.d)
  */
 /*          Copyright Robert Klotzner 2012 - 2013.
  * Distributed under the Boost Software License, Version 1.0.
@@ -801,8 +800,8 @@ else
             return text(address);
         }
     private:
-        ptrdiff_t _addrHigh = 0;
-        ptrdiff_t _addrLow = 0;
+        ptrdiff_t _addrHigh = 0xffff0000;
+        ptrdiff_t _addrLow = 0xffff0000;
     }
 }
 
