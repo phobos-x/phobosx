@@ -126,6 +126,12 @@ string signal(Args...)(string name, string protection="private")
 
 debug (signal) pragma(msg, signal!int("haha"));
 
+/**
+ * Full signal implementation.
+ *
+ * It implements the emit function for all other functionality it has
+ * this aliased to RestrictedSignal.
+ */
 struct FullSignal(Args...)
 {
     alias restricted this;
@@ -136,7 +142,7 @@ struct FullSignal(Args...)
      * All connected slots which are still alive will be called.  If
      * any of the slots throws an exception, the other slots will
      * still be called. You'll receive a chained exception with all
-     * exceptions that happened.
+     * exceptions that were thrown.
      *
      * The slots are called in the same sequence as they were registered.
      *
@@ -163,6 +169,14 @@ struct FullSignal(Args...)
     RestrictedSignal!(Args) restricted_;
 }
 
+/**
+ * The signal implementation, not providing an emit method.
+ *
+ * The idea is to instantiate a FullSignal privately and provide a
+ * public accessor method for accessing the contained
+ * RestrictedSignal. You can use the signal string mixin, which does
+ * exactly that.
+ */
 struct RestrictedSignal(Args...)
 {
     /**
@@ -334,43 +348,42 @@ private struct SignalImpl
       * choice to simply disallow copying.
       */
     @disable this(this);
-    /// Forbit copying, it does not work. See this(this).
+    /// Forbit copying
     @disable void opAssign(SignalImpl other);
 
     void emit(Args...)( Args args )
     {
-        int emptyCount=0;
-        auto myslots=slots; // Don't remove this! We need to keep an unmodified pointer on the stack!
-        if (!isEmitting)
+        int emptyCount = 0;
+        if (!_slots.emitInProgress)
         {
-            isEmitting = true;
-            scope (exit) isEmitting = false;
+            _slots.emitInProgress = true;
+            scope (exit) _slots.emitInProgress = false;
         }
         else
             emptyCount = -1;
-        doEmit(myslots[0 .. $], 0, emptyCount, args);
+        doEmit(0, emptyCount, args);
         if (emptyCount > 0)
         {
-            _slots=myslots[0 .. $-emptyCount]; 
-            _slots.assumeSafeAppend();
+            _slots.slots = _slots.slots[0 .. $-emptyCount]; 
+            _slots.slots.assumeSafeAppend();
         }
     }
 
     void addSlot(Object obj, void delegate() dg)
     {
-        bool wasEmitting = isEmitting;
-        scope (exit) isEmitting = wasEmitting;
-        isEmitting = false;
-        if (_slots.capacity <= _slots.length)
+        auto oldSlots = _slots.slots;
+        if (oldSlots.capacity <= oldSlots.length)
         {
-            auto buf = new SlotImpl[_slots.length+1];
-            foreach (i, ref slot ; _slots)
+            auto buf = new SlotImpl[oldSlots.length+1]; // TODO: This growing strategy might be inefficient.
+            foreach (i, ref slot ; oldSlots)
                 buf[i].moveFrom(slot);
-            _slots = buf;
+            oldSlots = buf;
         }
         else
-            _slots.length++;
-        _slots[$-1].construct(obj, dg);
+            oldSlots.length = oldSlots.length + 1;
+
+        oldSlots[$-1].construct(obj, dg);
+        _slots.slots = oldSlots;
     }
     void removeSlot(Object obj, void delegate() dg)
     {
@@ -383,8 +396,7 @@ private struct SignalImpl
 
     ~this()
     {
-        isEmitting = false;
-        foreach (ref slot; _slots)
+        foreach (ref slot; _slots.slots)
         {
             debug (signal) { import std.stdio; stderr.writefln("Destruction, removing some slot(%s, weakref: %s), signal: ", &slot, &slot._obj, &this); }
             slot.reset(); // This is needed because ATM the GC won't trigger struct
@@ -398,10 +410,7 @@ private struct SignalImpl
      */
     void removeSlot(bool delegate(const ref SlotImpl) isRemoved)
     {
-        bool wasEmitting = isEmitting;
-        scope (exit) isEmitting = wasEmitting;
-        isEmitting = false;
-        foreach (ref slot; _slots)
+        foreach (ref slot; _slots.slots)
             if (isRemoved(slot))
                 slot.reset();
     }
@@ -411,58 +420,33 @@ private struct SignalImpl
      * All exceptions that occur will be chained.
      * Any invalid slots (GC collected or removed) will be dropped.
      */
-    static void doEmit(Args...)( SlotImpl[] slots, int offset, ref int emptyCount, Args args )
+    void doEmit(Args...)(int offset, ref int emptyCount, Args args )
     {
         int i=offset;
-        immutable ptrdiff_t length=slots.length;
-        scope (exit) if (i<length-1) doEmit(slots, i+1, emptyCount, args); // Carry on.
+        auto myslots = _slots.slots; 
+        scope (exit) if (i+1<myslots.length) doEmit(i+1, emptyCount, args); // Carry on.
         if (emptyCount == -1)
-            for (; i<length; i++)
-                slots[i](args);
-        else
-            for (; i<length; i++)
+            for (; i<myslots.length; i++)
             {
-                if (!slots[i](args)) 
+                myslots[i](args);
+                myslots = _slots.slots; // Refresh because addSlot might have been called.
+            }
+        else
+            for (; i<myslots.length; i++)
+            {
+                bool result = myslots[i](args);
+                myslots = _slots.slots; // Refresh because addSlot might have been called.
+                if (!result) 
                     emptyCount++;
                 else if (emptyCount>0)
                 {
-                    debug (signal) slots[i-emptyCount].reset();
-                    slots[i-emptyCount].moveFrom(slots[i]);
+                    myslots[i-emptyCount].reset();
+                    myslots[i-emptyCount].moveFrom(myslots[i]);
                 }
             }
     }
 
-    /**
-     * We use the lsb of _slots.ptr for marking whether an emit is currently in progress.
-     *
-     * This is strictly speaking not allowed with GC managed memory
-     * (see: http://dlang.org/garbage.html), but if we keep a copy of
-     * the pointer on the stack which does not have the lsb set, we
-     * should be fine.
-     */
-    SlotImpl[] slots() @property
-    {
-        SlotImpl* mslots = _slots.ptr;
-        mslots = cast(SlotImpl*) (cast(ptrdiff_t) mslots &  ~ cast(ptrdiff_t) 1);
-        return mslots[0 .. _slots.length];
-    }
-    void isEmitting(bool yes) @property
-    {
-        SlotsABI* mslots = cast(SlotsABI*) &_slots;
-        if (yes)
-            mslots.ptr = cast(SlotImpl*)(cast(ptrdiff_t) mslots.ptr | 1);
-        else
-            mslots.ptr = cast(void*)(cast(ptrdiff_t) mslots.ptr & ~cast(ptrdiff_t) 1);
-    }
-    bool isEmitting() @property const
-    {
-        return cast(ptrdiff_t) _slots.ptr & 1;
-    }
-    SlotImpl[] _slots;
-    struct SlotsABI { // Needed for writing _slots.ptr for our hacky mark thingy.
-        size_t length;
-        size_t ptr;
-    }
+    SlotArray _slots;
 }
 
 
@@ -528,6 +512,7 @@ private struct SlotImpl
     {
         return cast(ptrdiff_t) _funcPtr & 1;
     }
+
     /**
      * Call the slot.
      *
@@ -704,6 +689,70 @@ else
     private:
         ptrdiff_t _addrHigh = 0;
         ptrdiff_t _addrLow = 0;
+    }
+}
+
+/**
+ * Provides a way of storing flags in unused parts of a typical D array.
+ *
+ * By unused I mean the highest bits of the length (We don't need to support 4 billion slots per signal on 32 bit or 10^19 on 64 bit!)
+ */
+private struct SlotArray {
+    import std.bitmanip : bitfields;
+    enum reservedBitsCount = 3;
+    enum maxSlotCount = size_t.max >> reservedBitsCount;
+    SlotImpl[] slots() @property
+    {
+        return _ptr[0 .. length];
+    }
+    void slots(SlotImpl[] newSlots) @property
+    {
+        _ptr = newSlots.ptr;
+        version(assert) import std.conv : text;
+        assert(newSlots.length <= maxSlotCount, text("Maximum slots per signal exceeded: ", newSlots.length, "/", maxSlotCount));
+        _blength.length &= ~maxSlotCount;
+        _blength.length |= newSlots.length;
+    }
+    size_t length() @property
+    {
+        return _blength.length & maxSlotCount;
+    }
+
+    bool emitInProgress() @property
+    {
+        return _blength.emitInProgress;
+    }
+    void emitInProgress(bool val) @property
+    {
+        _blength.emitInProgress = val;
+    }
+private:
+    SlotImpl* _ptr;
+    union BitsLength {
+        mixin(bitfields!(
+                  bool, "", size_t.sizeof*8-1,
+                  bool, "emitInProgress", 1
+                  ));
+        size_t length;
+    }
+    BitsLength _blength;
+}
+unittest {
+    SlotArray arr;
+    auto tmp = new SlotImpl[10];
+    arr.slots = tmp;
+    assert(arr.length == 10);
+    assert(!arr.emitInProgress);
+    arr.emitInProgress = true;
+    assert(arr.emitInProgress);
+    assert(arr.length == 10);
+    assert(arr.slots is tmp);
+    arr.slots = tmp;
+    assert(arr.emitInProgress);
+    assert(arr.length == 10);
+    assert(arr.slots is tmp);
+    debug (signal){ import std.stdio;
+        writeln("Slot array tests passed!");
     }
 }
 unittest { // Check that above example really works ...
