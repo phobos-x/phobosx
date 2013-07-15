@@ -1,0 +1,11 @@
+{
+    "name": "phobosx",
+    "description": "Experimental phobos modules",
+    "homepage": "https://github.com/phobos-x/phobosx",
+    "copyright": "Copyright © 2013, Robert Klotzner",
+    "authors": [
+	"Robert Klotzner"
+    ],
+    "dependencies": {
+    }
+}
