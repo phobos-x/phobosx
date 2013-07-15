@@ -38,10 +38,10 @@ version=bug10645;
 /**
  * string mixin for creating a signal.
  *
- * It creates a FullSignal instance named "_name", where name is given
+ * It creates a Signal instance named "_name", where name is given
  * as first parameter with given protection and an accessor method
  * with the current context protection named "name" returning either a
- * ref RestrictedSignal or ref FullSignal depending on the given
+ * ref RestrictedSignal or ref Signal depending on the given
  * protection.
  *
  * Params:
@@ -53,7 +53,7 @@ version=bug10645;
  *   "private", "protected", "package" or in addition "none". Default
  *   is "private". It specifies the protection of the struct instance,
  *   if none is given, private is used and the ref returning function
- *   will return a FullSignal instead of a RestrictedSignal. The
+ *   will return a Signal instead of a RestrictedSignal. The
  *   protection of the accessor method is specified by the surrounding
  *   protection scope.
  *
@@ -120,8 +120,8 @@ string signal(Args...)(string name, string protection="private")
          argList = argList[0 .. $-2];
      argList ~= ")";
 
-     string output = (protection == "none" ? "private" : protection) ~ " FullSignal!" ~ argList ~ " _" ~ name ~ ";\n";
-     string rType= protection == "none" ? "FullSignal!" : "RestrictedSignal!";
+     string output = (protection == "none" ? "private" : protection) ~ " Signal!" ~ argList ~ " _" ~ name ~ ";\n";
+     string rType= protection == "none" ? "Signal!" : "RestrictedSignal!";
      output ~= "ref " ~ rType ~ argList ~ " " ~ name ~ "() { return _" ~ name ~ ";}\n";
      return output;
  }
@@ -134,7 +134,7 @@ debug (signal) pragma(msg, signal!int("haha"));
  * It implements the emit function for all other functionality it has
  * this aliased to RestrictedSignal.
  */
-struct FullSignal(Args...)
+struct Signal(Args...)
 {
     alias restricted this;
 
@@ -174,7 +174,7 @@ struct FullSignal(Args...)
 /**
  * The signal implementation, not providing an emit method.
  *
- * The idea is to instantiate a FullSignal privately and provide a
+ * The idea is to instantiate a Signal privately and provide a
  * public accessor method for accessing the contained
  * RestrictedSignal. You can use the signal string mixin, which does
  * exactly that.
@@ -1170,7 +1170,7 @@ unittest
 {
     debug (signal) import std.stdio;
     import std.conv;
-    FullSignal!() s1;
+    Signal!() s1;
     void testfunc(int id) 
     {
         throw new Exception(to!string(id));
