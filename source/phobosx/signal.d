@@ -695,12 +695,14 @@ else
 /**
  * Provides a way of storing flags in unused parts of a typical D array.
  *
- * By unused I mean the highest bits of the length (We don't need to support 4 billion slots per signal on 32 bit or 10^19 on 64 bit!)
+ * By unused I mean the highest bits of the length (We don't need to support 4 billion slots per signal with int or 10^19 if length gets changed to 64 bits.)
  */
 private struct SlotArray {
+    // Choose int for now, this saves 4 bytes on 64 bits.
+    alias int lengthType;
     import std.bitmanip : bitfields;
     enum reservedBitsCount = 3;
-    enum maxSlotCount = size_t.max >> reservedBitsCount;
+    enum maxSlotCount = lengthType.max >> reservedBitsCount;
     SlotImpl[] slots() @property
     {
         return _ptr[0 .. length];
@@ -730,10 +732,10 @@ private:
     SlotImpl* _ptr;
     union BitsLength {
         mixin(bitfields!(
-                  bool, "", size_t.sizeof*8-1,
+                  bool, "", lengthType.sizeof*8-1,
                   bool, "emitInProgress", 1
                   ));
-        size_t length;
+        lengthType length;
     }
     BitsLength _blength;
 }
