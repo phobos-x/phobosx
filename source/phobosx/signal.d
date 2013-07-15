@@ -412,9 +412,33 @@ private struct SignalImpl
      */
     void removeSlot(bool delegate(const ref SlotImpl) isRemoved)
     {
-        foreach (ref slot; _slots.slots)
-            if (isRemoved(slot))
-                slot.reset();
+        if(_slots.emitInProgress)
+        {
+            foreach (ref slot; _slots.slots)
+                if (isRemoved(slot))
+                    slot.reset();
+        }
+        else // It is save to do immediate cleanup:
+        {
+            int emptyCount = 0;
+            auto mslots = _slots.slots;
+            foreach (int i, ref slot; mslots)
+            // We are retrieving obj twice which is quite expensive because of GC lock:
+                if(!slot.isValid || isRemoved(slot)) 
+                {
+                    emptyCount++;
+                    slot.reset();
+                }
+                else if(emptyCount)
+                    mslots[i-emptyCount].moveFrom(slot);
+            
+            if (emptyCount > 0)
+            {
+                mslots = mslots[0..$-emptyCount];
+                mslots.assumeSafeAppend();
+                _slots.slots = mslots;
+            }
+        }
     }
 
     /**
@@ -515,6 +539,15 @@ private struct SlotImpl
         return cast(ptrdiff_t) _funcPtr & 1;
     }
 
+    /**
+     * Check whether this is a valid slot.
+     *
+     * Meaning opCall will call something and return true;
+     */
+    bool isValid() @property const
+    {
+        return funcPtr && (!hasObject || obj !is null);
+    }
     /**
      * Call the slot.
      *
