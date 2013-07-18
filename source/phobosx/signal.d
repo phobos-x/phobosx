@@ -42,6 +42,17 @@ version=bug10645;
  * ref RestrictedSignal or ref Signal depending on the given
  * protection.
  *
+ * Bugs:
+ *     This mixin generator does not work with templated types right now because of:
+ *     $(LINK2 http://d.puremagic.com/issues/show_bug.cgi?id=10502, 10502)$(BR)
+ *     You might wanna use the Signal struct directly in this
+ *     case. Ideally you write the code, the mixin would generate, manually
+ *     to ensure an easy upgrade path when the above bug gets fixed:
+ ---
+ *     ref RestrictedSignal!(SomeTemplate!int) mysig() { return _mysig;}
+ *     private Signal!(SomeTemplate!int) _mysig;
+ ---     
+ *
  * Params:
  *   name = How the signal should be named. The ref returning function
  *   will be named like this, the actual struct instance will have an
@@ -150,6 +161,9 @@ string signal(Args...)(string name, string protection="private") @safe {
  * it was disconnected from the signal or the signal got itself destroyed.
  *
  * This struct is not thread-safe.
+ *
+ * Bugs: The code probably won't compile with -profile because of bug:
+ *       $(LINK2 http://d.puremagic.com/issues/show_bug.cgi?id=10260, 10260)
  */
 struct Signal(Args...)
 {
