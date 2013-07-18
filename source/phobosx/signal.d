@@ -95,6 +95,10 @@ class Observer
         writefln("Observed msg '%s' and value %s", msg, i);
     }
 }
+void watch(string msg, int i)
+{
+    writefln("Globally observed msg '%s' and value %s", msg, i);
+}
 void main()
 {
     auto a = new MyObject;
@@ -106,15 +110,22 @@ void main()
     a.valueChanged.disconnect!"watch"(o);     // o.watch is no longer a slot
     a.value = 5;                // so should not call o.watch()
     a.valueChanged.connect!"watch"(o);        // connect again
+    // Do some fancy stuff:
+    a.valueChanged.connect!Observer(o, (obj, msg, i) =>  obj.watch("Some other text I made up", i+1));
+    a.valueChanged.strongConnect(&watch);
     a.value = 6;                // should call o.watch()
     destroy(o);                 // destroying o should automatically disconnect it
     a.value = 7;                // should not call o.watch()
+
 }
 ---
  * which should print:
  * <pre>
  * Observed msg 'setting new value' and value 4
  * Observed msg 'setting new value' and value 6
+ * Observed msg 'Some other text I made up' and value 7
+ * Globally observed msg 'setting new value' and value 6
+ * Globally observed msg 'setting new value' and value 7
  * </pre>
  */
 string signal(Args...)(string name, string protection="private") @safe {
@@ -914,6 +925,10 @@ unittest
         }
     }
 
+    void watch(string msg, int i)
+    {
+            debug (signal) writefln("Globally observed msg '%s' and value %s", msg, i);
+    }
     auto a = new MyObject;
     Observer o = new Observer;
 
@@ -923,6 +938,9 @@ unittest
     a.valueChanged.disconnect!"watch"(o);     // o.watch is no longer a slot
     a.value = 5;                // so should not call o.watch()
     a.valueChanged.connect!"watch"(o);        // connect again
+    // Do some fancy stuff:
+    a.valueChanged.connect!Observer(o, (obj, msg, i) =>  obj.watch("Some other text I made up", i+1));
+    a.valueChanged.strongConnect(&watch);
     a.value = 6;                // should call o.watch()
     destroy(o);                 // destroying o should automatically disconnect it
     a.value = 7;                // should not call o.watch()
