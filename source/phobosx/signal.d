@@ -848,8 +848,11 @@ private struct SlotArray {
     void slots(SlotImpl[] newSlots) @property
     {
         _ptr = newSlots.ptr;
-        version(assert) import std.conv : text;
-        assert(newSlots.length <= maxSlotCount, text("Maximum slots per signal exceeded: ", newSlots.length, "/", maxSlotCount));
+        version(assert)
+        {
+            import std.conv : text;
+            assert(newSlots.length <= maxSlotCount, text("Maximum slots per signal exceeded: ", newSlots.length, "/", maxSlotCount));
+        }
         _blength.length &= ~maxSlotCount;
         _blength.length |= newSlots.length;
     }
