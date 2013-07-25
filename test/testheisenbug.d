@@ -41,7 +41,7 @@ void main()
     while (true) {
         for (int n = 0; n < 20; n++) {
             auto o = new Observer();
-            a.sig.connect(&o.watch);
+            a.sig.connect!"watch"(o);
         }
         a._sig.emit(4);
     }
