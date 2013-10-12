@@ -15,9 +15,12 @@ really good if it had some real world testing and some evolution
 behind it, which means breaking changes.
 
 So in contrast to phobos which is supposed to be stable as hell, this
-repository is meant to be really, really unstable, more unstable than
+repository is meant to be unstable, more unstable than
 most other repositories you will find in the dub registry, because the
 developers need the freedom to improve the code in any possible way.
+
+Having said this, modules in this repository should not be considered to be of low quality,
+just that the API is allowed to change for improvements.
 
 Even if one manages to submit the perfect module from the start your
 code will break once it gets accepted into phobos, as it will get
