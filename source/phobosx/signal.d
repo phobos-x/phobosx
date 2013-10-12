@@ -401,7 +401,7 @@ private struct SignalImpl
       * choice to simply disallow copying.
       */
     @disable this(this);
-    /// Forbit copying
+    /// Forbid copying
     @disable void opAssign(SignalImpl other);
 
     void emit(Args...)( Args args )
