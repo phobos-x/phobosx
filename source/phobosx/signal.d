@@ -698,11 +698,9 @@ private struct WeakRef
         // Two iterations are necessary, because after the atomic load
         // we still have an invisible address, thus the GC can reset
         // _obj after we already retrieved the data. Also the call to
-        // GC.addrOf needs to be done twice, otherwise still segfaults
+        // GC.addrOf needs to be done twice, otherwise segfaults
         // still happen. With two iterations I wasn't able to trigger
-        // any segfault with test/testheisenbug.d. The assertion in
-        // Observer.watch never triggered anyways with this
-        // implementation.
+        // any segfault with test/testheisenbug.d.
         foreach ( i ; 0..2)
         {
             auto tmp =  atomicLoad(_obj); // Does not work with constructor
