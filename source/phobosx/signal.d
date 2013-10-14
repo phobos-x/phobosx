@@ -129,7 +129,11 @@ void main()
  * </pre>
  */
 string signal(Args...)(string name, string protection="private") @safe {
-    assert(protection == "public" || protection == "private" || protection == "package" || protection == "protected" || protection == "none", "Invalid protection specified, must be either: public, private, package, protected or none");
+    assert(protection == "public" || protection == "private" ||
+		   protection == "package" || protection == "protected" ||
+		   protection == "none",
+		   "Invalid protection specified, must be either:"~
+		   "public, private, package, protected or none");
 
      string argList="(";
      import std.traits : fullyQualifiedName;
@@ -141,7 +145,8 @@ string signal(Args...)(string name, string protection="private") @safe {
          argList = argList[0 .. $-2];
      argList ~= ")";
 
-     string output = (protection == "none" ? "private" : protection) ~ " Signal!" ~ argList ~ " _" ~ name ~ ";\n";
+     string output = (protection == "none" ? "private" : protection) ~
+		 " Signal!" ~ argList ~ " _" ~ name ~ ";\n";
      string rType= protection == "none" ? "Signal!" : "RestrictedSignal!";
      output ~= "ref " ~ rType ~ argList ~ " " ~ name ~ "() { return _" ~ name ~ ";}\n";
      return output;
@@ -694,28 +699,19 @@ private struct WeakRef
     }
     Object obj() @property const
     {
-        void* o = null;
-        // Two iterations are necessary, because after the atomic load
-        // we still have an invisible address, thus the GC can reset
-        // _obj after we already retrieved the data. Also the call to
-        // GC.addrOf needs to be done twice, otherwise segfaults
-        // still happen. With two iterations I wasn't able to trigger
-        // any segfault with test/testheisenbug.d.
-        foreach ( i ; 0..2)
-        {
-            auto tmp =  atomicLoad(_obj); // Does not work with constructor
-            debug (signal) { import std.stdio; writefln("Loaded %s, should be: %s", tmp, cast(InvisibleAddress)_obj); }
-            o = tmp.address;
-            if ( o is null)
-                return null; // Nothing to do then.
-            o = GC.addrOf(tmp.address);
-        }
-        if (o)
-        {
-            assert(GC.addrOf(o), "Not possible!");
-            return cast(Object)o;
-        }
-        return null;
+		auto tmp =  atomicLoad(_obj); // Does not work with constructor
+		debug (signal) { import std.stdio; writefln("Loaded %s, should be: %s", tmp, cast(InvisibleAddress)_obj); }
+		auto o = tmp.address;
+		if ( o is null)
+			return null; // Nothing to do then.
+		GC.addrOf(o); // Just a dummy call to the GC in order to wait for any pending collection.
+		import core.atomic;
+		atomicFence(); // Ensure that GC.addrof gets called before re-retrieval of the address.
+		auto tmp1 = atomicLoad(_obj);
+		if ( o is tmp1.address ) // Don't check tmp1.address for null, but compare with "o" to ensure "o" is not optimized away.
+			return cast(Object) o;
+		assert ( tmp1.address is null );
+		return null;
     }
     /**
      * Reset this instance to its intial value.
