@@ -740,130 +740,113 @@ private struct WeakRef
     
     void unhook(Object o)
     {
-        _obj.clearSafely();
+        _obj.reset();
     }
     
     shared(InvisibleAddress) _obj;
 }
 
-version(D_LP64) 
+// Do all the dirty stuff, WeakRef is only a thin wrapper completing
+// the functionality by means of rt_ hooks.
+private shared struct InvisibleAddress
 {
-    shared struct InvisibleAddress
+    /// Initialize with o, state is set to invisible immediately.
+    /// No precautions regarding thread safety are necessary because
+    /// obviously a live reference exists.
+    void construct(void* o)
     {
-        /// Initialize with o, state is set to invisible immediately.
-        /// No precautions regarding thread safety are necessary because
-        /// obviously a live reference exists.
-        void construct(void* o)
+        auto tmp = cast(ptrdiff_t) o;
+        _addr = makeInvisible(cast(ptrdiff_t) o);
+    }
+    void reset()
+    {
+        atomicStore(_addr, 0L);
+    }
+    void* address() @property 
+    {
+        makeVisible(); 
+        scope (exit) makeInvisible(); 
+        GC.addrOf(cast(void*)atomicLoad(_addr)); // Just a dummy call to the GC
+                                 // in order to wait for any possible running
+                                 // collection to complete (have unhook called).
+        auto buf = atomicLoad(_addr);
+        if ( isNull(buf) )
+            return null;
+        assert(isVisible(buf));
+        return cast(void*) buf;
+    }
+    debug(signal)        string toString()
+    {
+        import std.conv : text;
+        return text(address);
+    }
+private:
+
+    long _addr;
+
+    void makeVisible()
+    {
+        long buf, wbuf;
+        do
         {
-            _addr = ~cast(ptrdiff_t)(o);
+            buf = atomicLoad(_addr);
+            wbuf = makeVisible(buf);
         }
-        /// Set address to null in a thread-safe way.
-        void clearSafely()
+        while(!cas(&_addr, buf, wbuf));
+    }
+    void makeInvisible()
+    {
+        long buf, wbuf;
+        do
         {
-            atomicStore(_addr, 0L);
+            buf = atomicLoad(_addr);
+            wbuf = makeInvisible(buf);
         }
-        /// Get the address, or null if none exists.
-        void* address() @property
+        while(!cas(&_addr, buf, wbuf));
+    }
+    version(D_LP64)
+    {
+        static long makeVisible(long addr)
         {
-            toggleVisibility(); 
-            scope (exit) toggleVisibility(); 
-            GC.addrOf(_obj.address); // Just a dummy call to the GC
-                                     // in order to wait for any possible running
-                                     // collection to complete (have unhook called).
-            auto buf = atomicLoad(_addr);
-            if ( buf == 0 || buf == (~0) )
-                return null;
-            assert(isVisible(buf), "MSB is set, have you called toggleVisibility?");
-            return cast(void*) buf;
+            return ~addr;
         }
-        
-        debug(signal)        string toString()
+
+        static long makeInvisible(long addr)
         {
-            import std.conv : text;
-            return text(address);
-        }
-    private:
-        /// Toggle visibility of the address.
-        void toggleVisibility()
-        {
-            ptrdiff_t buf, wbuf;
-            do
-            {
-                buf = atomicLoad(_addr);
-                wbuf = ~buf;
-            }
-            while(!cas(&_addr, buf, wbuf));
-        }
-        static bool isVisible(ptrdiff_t addr)
+            return ~addr;
+        }                
+        static bool isVisible(long addr)
         {
             return !(addr & (1L << (ptrdiff_t.sizeof*8-1)));
         }
-        ptrdiff_t _addr;
+        static bool isNull(long addr)
+        {  
+            return ( addr == 0 || addr == (~0) );
+        }
     }
-}
-else 
-{
-    shared struct InvisibleAddress
+    else
     {
-        void construct(void* o)
+        static long makeVisible(long addr)
         {
-            auto tmp = cast(ptrdiff_t) cast(void*) o;
-            auto addrHigh = ((tmp >> 16) & 0x0000ffff) | 0xffff0000; // Address relies in kernel space
-            auto addrLow = (tmp & 0x0000ffff) | 0xffff0000;
-            _addr = (cast(long)addrHigh << 32) | addrLow;
+            auto addrHigh = (addr >> 32) & 0xffff;
+            auto addrLow = addr & 0xffff;
+            return addrHigh << 16 | addrLow;
         }
-        void clearSafely()
+
+        static long makeInvisible(long addr)
         {
-            atomicStore(_addr, 0L);
-        }
-        void* address() @property 
-        {
-            makeVisible(); 
-            scope (exit) makeInvisible(); 
-            GC.addrOf(cast(void*)atomicLoad(_addr)); // Just a dummy call to the GC
-                                     // in order to wait for any possible running
-                                     // collection to complete (have unhook called).
-            auto buf = atomicLoad(_addr);
-            if ( buf == 0 || buf == ((0xffff0000L << 32) | 0xffff0000) ) 
-                return null;
-            assert(isVisible(buf));
-            return cast(void*) buf;
-        }
-        debug(signal)        string toString()
-        {
-            import std.conv : text;
-            return text(address);
-        }
-    private:
-        void makeVisible()
-        {
-            long buf, wbuf;
-            do
-            {
-                buf = atomicLoad(_addr);
-                auto addrHigh = (buf >> 32) & 0xffff;
-                auto addrLow = buf & 0xffff;
-                wbuf = addrHigh << 16 | addrLow;
-            }
-            while(!cas(&_addr, buf, wbuf));
-        }
-        void makeInvisible()
-        {
-            long buf, wbuf;
-            do
-            {
-                buf = atomicLoad(_addr);
-                auto addrHigh = ((buf >> 16) & 0x0000ffff) | 0xffff0000;
-                auto addrLow = (buf & 0x0000ffff) | 0xffff0000;
-                wbuf = (cast(long)addrHigh << 32) | addrLow;
-            }
-            while(!cas(&_addr, buf, wbuf));
-        }
+            auto addrHigh = ((addr >> 16) & 0x0000ffff) | 0xffff0000;
+            auto addrLow = (addr & 0x0000ffff) | 0xffff0000;
+            return (cast(long)addrHigh << 32) | addrLow;
+        }                
         static bool isVisible(long addr)
         {
             return !((addr >> 32) & 0xffffffff);
         }
-        long _addr;
+        static bool isNull(long addr)
+        {
+            return ( addr == 0 || addr == ((0xffff0000L << 32) | 0xffff0000) );
+        }
     }
 }
 
