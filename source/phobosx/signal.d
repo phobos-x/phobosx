@@ -17,6 +17,9 @@
  * Based on the original implementation written by Walter Bright. (std.signals)
  * I shamelessly stole some ideas of: http://forum.dlang.org/thread/jjote0$1cql$1@digitalmars.com
  * written by Alex Rønne Petersen.
+ *
+ * Also thanks to Denis Shelomovskij who made me aware of some
+ * deficiencies in the concurrent part of WeakRef.
  */
 module phobosx.signal;
 
