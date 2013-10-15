@@ -130,10 +130,10 @@ void main()
  */
 string signal(Args...)(string name, string protection="private") @safe {
     assert(protection == "public" || protection == "private" ||
-		   protection == "package" || protection == "protected" ||
-		   protection == "none",
-		   "Invalid protection specified, must be either:"~
-		   "public, private, package, protected or none");
+           protection == "package" || protection == "protected" ||
+           protection == "none",
+           "Invalid protection specified, must be either:"~
+           "public, private, package, protected or none");
 
      string argList="(";
      import std.traits : fullyQualifiedName;
@@ -146,7 +146,7 @@ string signal(Args...)(string name, string protection="private") @safe {
      argList ~= ")";
 
      string output = (protection == "none" ? "private" : protection) ~
-		 " Signal!" ~ argList ~ " _" ~ name ~ ";\n";
+         " Signal!" ~ argList ~ " _" ~ name ~ ";\n";
      string rType= protection == "none" ? "Signal!" : "RestrictedSignal!";
      output ~= "ref " ~ rType ~ argList ~ " " ~ name ~ "() { return _" ~ name ~ ";}\n";
      return output;
@@ -445,11 +445,11 @@ private struct SignalImpl
     }
     void removeSlot(Object obj, void delegate() dg)
     {
-        removeSlot((const ref SlotImpl item) => item.wasConstructedFrom(obj, dg));
+        removeSlot((ref SlotImpl item) => item.wasConstructedFrom(obj, dg));
     }
     void removeSlot(Object obj) 
     {
-        removeSlot((const ref SlotImpl item) => item.obj is obj);
+        removeSlot((ref SlotImpl item) => item.obj is obj);
     }
 
     ~this()
@@ -466,7 +466,7 @@ private struct SignalImpl
     /**
      * Find and make invalid any slot for which isRemoved returns true.
      */
-    void removeSlot(bool delegate(const ref SlotImpl) isRemoved)
+    void removeSlot(bool delegate(ref SlotImpl) isRemoved)
     {
         if(_slots.emitInProgress)
         {
@@ -508,12 +508,15 @@ private struct SignalImpl
         auto myslots = _slots.slots; 
         scope (exit) if (i+1<myslots.length) doEmit(i+1, emptyCount, args); // Carry on.
         if (emptyCount == -1)
+        {
             for (; i<myslots.length; i++)
             {
                 myslots[i](args);
                 myslots = _slots.slots; // Refresh because addSlot might have been called.
             }
+        }
         else
+        {
             for (; i<myslots.length; i++)
             {
                 bool result = myslots[i](args);
@@ -526,6 +529,7 @@ private struct SignalImpl
                     myslots[i-emptyCount].moveFrom(myslots[i]);
                 }
             }
+        }
     }
 
     SlotArray _slots;
@@ -561,7 +565,7 @@ private struct SlotImpl
     /**
      * Check whether this slot was constructed from object o and delegate dg.
      */
-    bool wasConstructedFrom(Object o, void delegate() dg) const
+    bool wasConstructedFrom(Object o, void delegate() dg)
     {
         if ( o && dg.ptr is cast(void*) o)
             return obj is o && _dataPtr is directPtrFlag && funcPtr is dg.funcptr;
@@ -582,7 +586,7 @@ private struct SlotImpl
         other.reset(); // Destroy original!
         
     }
-    @property Object obj() const
+    @property Object obj()
     {
         return _obj.obj;
     }
@@ -600,7 +604,7 @@ private struct SlotImpl
      *
      * Meaning opCall will call something and return true;
      */
-    bool isValid() @property const
+    bool isValid() @property 
     {
         return funcPtr && (!hasObject || obj !is null);
     }
@@ -694,36 +698,25 @@ private struct WeakRef
         debug (signal) { import std.stdio; writefln("WeakRef.construct for %s and object: %s", &this, o); }
         if (!o)
             return;
-        _obj = InvisibleAddress.construct(cast(void*)o);
+        _obj.construct(cast(void*)o);
         rt_attachDisposeEvent(o, &unhook);
     }
-    Object obj() @property const
+    Object obj() @property 
     {
-		auto tmp =  atomicLoad(_obj); // Does not work with constructor
-		debug (signal) { import std.stdio; writefln("Loaded %s, should be: %s", tmp, cast(InvisibleAddress)_obj); }
-		auto o = tmp.address;
-		if ( o is null)
-			return null; // Nothing to do then.
-		GC.addrOf(o); // Just a dummy call to the GC in order to wait for any pending collection.
-		import core.atomic;
-		atomicFence(); // Ensure that GC.addrof gets called before re-retrieval of the address.
-		auto tmp1 = atomicLoad(_obj);
-		if ( o is tmp1.address ) // Don't check tmp1.address for null, but compare with "o" to ensure "o" is not optimized away.
-			return cast(Object) o;
-		assert ( tmp1.address is null );
-		return null;
+        return cast(Object) _obj.address;
     }
     /**
      * Reset this instance to its intial value.
      */   
-    void reset() {
+    void reset()
+    {
         auto o = obj;
         debug (signal) { import std.stdio; writefln("WeakRef.reset for %s and object: %s", &this, o); }
         if (o)
-        {
             rt_detachDisposeEvent(o, &unhook);
-            unhook(o);
-        }
+        unhook(o); // unhook has to be done unconditionally, because in case the GC
+        //kicked in during toggleVisibility(), obj would contain -1
+        //so the assertion of SlotImpl.moveFrom would fail.
         debug (signal) createdThis = null;
     }
     
@@ -734,84 +727,107 @@ private struct WeakRef
     private:
     debug (signal)
     {
-    invariant()
-    {
-        import std.conv : text;
-        assert(createdThis is null || &this is createdThis, text("We changed address! This should really not happen! Orig address: ", cast(void*)createdThis, " new address: ", cast(void*)&this));
+        invariant()
+        {
+            import std.conv : text;
+            assert(createdThis is null || &this is createdThis,
+                   text("We changed address! This should really not happen! Orig address: ",
+                    cast(void*)createdThis, " new address: ", cast(void*)&this));
+        }
+
+        WeakRef* createdThis;
     }
-    WeakRef* createdThis;
-    }
+    
     void unhook(Object o)
     {
-        version (all)
-            atomicStore(_obj, InvisibleAddress.construct(null));
-        else
-            _obj = InvisibleAddress(null);
+        _obj.clearSafely();
     }
+    
     shared(InvisibleAddress) _obj;
 }
 
 version(D_LP64) 
 {
-    struct InvisibleAddress
+    shared struct InvisibleAddress
     {
-        version(bug10645)
+        /// Initialize with o, state is set to invisible immediately.
+        /// No precautions regarding thread safety are necessary because
+        /// obviously a live reference exists.
+        void construct(void* o)
         {
-            static InvisibleAddress construct(void* o)
-            {
-                return InvisibleAddress(~cast(ptrdiff_t)o);
-            }
+            _addr = ~cast(ptrdiff_t)(o);
         }
-        else
+        /// Set address to null in a thread-safe way.
+        void clearSafely()
         {
-            this(void* o)
-            {
-                _addr = ~cast(ptrdiff_t)(o);
-                debug (signal) debug (3) { import std.stdio; writeln("Constructor _addr: ", _addr);}
-                debug (signal) debug (3) { import std.stdio; writeln("Constructor ~_addr: ", ~_addr);}
-            }
+            atomicStore(_addr, 0L);
         }
-        void* address() @property const
+        /// Get the address, or null if none exists.
+        void* address() @property
         {
-            debug (signal) debug (3) { import std.stdio; writeln("_addr: ", _addr);}
-            debug (signal) debug (3) { import std.stdio; writeln("~_addr: ", ~_addr);}
-            return cast(void*) ~ _addr;
+            toggleVisibility(); 
+            scope (exit) toggleVisibility(); 
+            GC.addrOf(_obj.address); // Just a dummy call to the GC
+                                     // in order to wait for any possible running
+                                     // collection to complete (have unhook called).
+            auto buf = atomicLoad(_addr);
+            if ( buf == 0 || buf == (~0) )
+                return null;
+            assert(isVisible(buf), "MSB is set, have you called toggleVisibility?");
+            return cast(void*) buf;
         }
+        
         debug(signal)        string toString()
         {
             import std.conv : text;
             return text(address);
         }
     private:
-        ptrdiff_t _addr = ~ cast(ptrdiff_t) 0;
+        /// Toggle visibility of the address.
+        void toggleVisibility()
+        {
+            ptrdiff_t buf, wbuf;
+            do
+            {
+                buf = atomicLoad(_addr);
+                wbuf = ~buf;
+            }
+            while(!cas(&_addr, buf, wbuf));
+        }
+        static bool isVisible(ptrdiff_t addr)
+        {
+            return !(addr & (1L << (ptrdiff_t.sizeof*8-1)));
+        }
+        ptrdiff_t _addr;
     }
 }
 else 
 {
-    struct InvisibleAddress
+    shared struct InvisibleAddress
     {
-        version(bug10645)
+        void construct(void* o)
         {
-            static InvisibleAddress construct(void* o)
-            {
-                auto tmp = cast(ptrdiff_t) cast(void*) o;
-                auto addrHigh = (tmp>>16)&0x0000ffff | 0xffff0000; // Address relies in kernel space
-                auto addrLow = tmp&0x0000ffff | 0xffff0000;
-                return InvisibleAddress(addrHigh, addrLow);
-            }
+            auto tmp = cast(ptrdiff_t) cast(void*) o;
+            auto addrHigh = ((tmp >> 16) & 0x0000ffff) | 0xffff0000; // Address relies in kernel space
+            auto addrLow = (tmp & 0x0000ffff) | 0xffff0000;
+            _addr = (cast(long)addrHigh << 32) | addrLow;
         }
-        else
+        void clearSafely()
         {
-            this(void* o)
-            {
-                auto tmp = cast(ptrdiff_t) cast(void*) o;
-                _addrHigh = (tmp>>16)&0x0000ffff | 0xffff0000; // Address relies in kernel space
-                _addrLow = tmp&0x0000ffff | 0xffff0000;
-            }
+            atomicStore(_addr, 0L);
         }
-        void* address() @property const
+        void* address() @property 
         {
-            return cast(void*) (_addrHigh<<16 | (_addrLow & 0x0000ffff));
+            makeVisible(); 
+            scope (exit) makeInvisible(); 
+            GC.addrOf(cast(void*)atomicLoad(_addr)); // Just a dummy call to the GC
+                                     // in order to wait for any possible running
+                                     // collection to complete (have unhook called).
+            auto buf = atomicLoad(_addr);
+            if ( buf == 0 || buf == ((0xffff0000L << 32) | 0xffff0000) ) 
+                return null;
+            assert(isVisible(buf));
+            return cast(void*) buf;
         }
         debug(signal)        string toString()
         {
@@ -819,8 +835,35 @@ else
             return text(address);
         }
     private:
-        ptrdiff_t _addrHigh = 0xffff0000;
-        ptrdiff_t _addrLow = 0xffff0000;
+        void makeVisible()
+        {
+            long buf, wbuf;
+            do
+            {
+                buf = atomicLoad(_addr);
+                auto addrHigh = (buf >> 32) & 0xffff;
+                auto addrLow = buf & 0xffff;
+                wbuf = addrHigh << 16 | addrLow;
+            }
+            while(!cas(&_addr, buf, wbuf));
+        }
+        void makeInvisible()
+        {
+            long buf, wbuf;
+            do
+            {
+                buf = atomicLoad(_addr);
+                auto addrHigh = ((buf >> 16) & 0x0000ffff) | 0xffff0000;
+                auto addrLow = (buf & 0x0000ffff) | 0xffff0000;
+                wbuf = (cast(long)addrHigh << 32) | addrLow;
+            }
+            while(!cas(&_addr, buf, wbuf));
+        }
+        static bool isVisible(long addr)
+        {
+            return !((addr >> 32) & 0xffffffff);
+        }
+        long _addr;
     }
 }
 
