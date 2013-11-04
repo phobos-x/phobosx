@@ -1,9 +1,11 @@
 // Written in the D programming language.
 
 /**
- * Signals and Slots are an implementation of the Observer Pattern.
+ * Signals and Slots are an implementation of the $(LINK2 http://en.wikipedia.org/wiki/Observer_pattern, Observer pattern)$(BR)
  * Essentially, when a Signal is emitted, a list of connected Observers
  * (called slots) are called.
+ *
+ * This implementation supersedes the former std.signals.
  *
  * Copyright: Copyright Robert Klotzner 2012 - 2013.
  * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
@@ -31,10 +33,6 @@ import core.memory;
 private alias void delegate(Object) DisposeEvt;
 private extern (C) void  rt_attachDisposeEvent( Object obj, DisposeEvt evt );
 private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
-//debug=signal;
-// http://d.puremagic.com/issues/show_bug.cgi?id=10645
-version=bug10645;
-
 
 /**
  * string mixin for creating a signal.
@@ -48,7 +46,7 @@ version=bug10645;
  * Bugs:
  *     This mixin generator does not work with templated types right now because of:
  *     $(LINK2 http://d.puremagic.com/issues/show_bug.cgi?id=10502, 10502)$(BR)
- *     You might wanna use the Signal struct directly in this
+ *     You might want to use the Signal struct directly in this
  *     case. Ideally you write the code, the mixin would generate, manually
  *     to ensure an easy upgrade path when the above bug gets fixed:
  ---
@@ -74,6 +72,8 @@ version=bug10645;
  import std.stdio;
  class MyObject
  {
+     // Mixin signal named valueChanged, with default "private" protection.
+     // (Only MyObject is allowed to emit the signal)
      mixin(signal!(string, int)("valueChanged"));
 
      int value() @property { return _value; }
@@ -167,19 +167,21 @@ string signal(Args...)(string name, string protection="private") @safe {
  * receivers. The sender will just call emit when something happens,
  * the signal takes care of notifing all interested parties. By using
  * wrapper delegates/functions, not even the function signature of
- * sender/receiver need to match. Another consequence of this very
- * loose coupling is, that a connected object will be freed by the GC
- * if all references to it are dropped, even if it is still connected
- * to a signal, the connection will simply be dropped. If this wasn't
- * the case you'd either end up managing connections by hand, soon
- * asking yourself why you are using a language with a GC and then
- * still have to handle the life time of your objects manually or you
- * don't care which results in memory leaks. If in your application
- * the connections made by a signal are not that loose you can use
- * strongConnect(), in this case the GC won't free your object until
- * it was disconnected from the signal or the signal got itself destroyed.
+ * sender/receiver need to match.
  *
- * This struct is not thread-safe.
+ * Another consequence of this very loose coupling is, that a
+ * connected object will be freed by the GC if all references to it
+ * are dropped, even if it was still connected to a signal, the
+ * connection will simply be dropped. This way the developer is freed of
+ * manually keeping track of connections.
+ *
+ * If in your application the connections made by a signal are not
+ * that loose you can use strongConnect(), in this case the GC won't
+ * free your object until it was disconnected from the signal or the
+ * signal got itself destroyed.
+ *
+ * This struct is not thread-safe in general, it just handles the
+ * concurrent parts of the GC.
  *
  * Bugs: The code probably won't compile with -profile because of bug:
  *       $(LINK2 http://d.puremagic.com/issues/show_bug.cgi?id=10260, 10260)
@@ -239,7 +241,7 @@ struct RestrictedSignal(Args...)
     /**
       * Direct connection to an object.
       *
-      * Use this method if you want to connect directly to an objects
+      * Use this method if you want to connect directly to an object's
       * method matching the signature of this signal.  The connection
       * will have weak reference semantics, meaning if you drop all
       * references to the object the garbage collector will collect it
@@ -264,7 +266,7 @@ struct RestrictedSignal(Args...)
     /**
       * Indirect connection to an object.
       *
-      * Use this overload if you want to connect to an object's method
+      * Use this overload if you want to connect to an objects method
       * which does not match the signal's signature.  You can provide
       * any delegate to do the parameter adaption, but make sure your
       * delegates' context does not contain a reference to the target
@@ -274,7 +276,7 @@ struct RestrictedSignal(Args...)
       * contains a ref to obj, the object won't be freed as long as
       * the connection remains.
       *
-      * Preconditions: obj and dg must not be null (dg's context
+      * Preconditions: obj and dg must not be null (dgs context
       * may). dg's context must not be equal to obj.
       *
       * Params:
@@ -482,6 +484,7 @@ private struct SignalImpl
             int emptyCount = 0;
             auto mslots = _slots.slots;
             foreach (int i, ref slot; mslots)
+            {
             // We are retrieving obj twice which is quite expensive because of GC lock:
                 if(!slot.isValid || isRemoved(slot)) 
                 {
@@ -490,6 +493,7 @@ private struct SignalImpl
                 }
                 else if(emptyCount)
                     mslots[i-emptyCount].moveFrom(slot);
+            }
             
             if (emptyCount > 0)
             {
@@ -587,8 +591,8 @@ private struct SlotImpl
         _dataPtr = other._dataPtr;
         _funcPtr = other._funcPtr;
         other.reset(); // Destroy original!
-        
     }
+    
     @property Object obj()
     {
         return _obj.obj;
@@ -856,7 +860,9 @@ private:
 /**
  * Provides a way of storing flags in unused parts of a typical D array.
  *
- * By unused I mean the highest bits of the length (We don't need to support 4 billion slots per signal with int or 10^19 if length gets changed to 64 bits.)
+ * By unused I mean the highest bits of the length.
+ * (We don't need to support 4 billion slots per signal with int
+ * or 10^19 if length gets changed to 64 bits.)
  */
 private struct SlotArray {
     // Choose int for now, this saves 4 bytes on 64 bits.
