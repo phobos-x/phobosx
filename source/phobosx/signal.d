@@ -473,7 +473,7 @@ private struct SignalImpl
      */
     void removeSlot(bool delegate(ref SlotImpl) isRemoved)
     {
-        if(_slots.emitInProgress)
+        if (_slots.emitInProgress)
         {
             foreach (ref slot; _slots.slots)
                 if (isRemoved(slot))
@@ -486,12 +486,12 @@ private struct SignalImpl
             foreach (int i, ref slot; mslots)
             {
             // We are retrieving obj twice which is quite expensive because of GC lock:
-                if(!slot.isValid || isRemoved(slot)) 
+                if (!slot.isValid || isRemoved(slot)) 
                 {
                     emptyCount++;
                     slot.reset();
                 }
-                else if(emptyCount)
+                else if (emptyCount)
                     mslots[i-emptyCount].moveFrom(slot);
             }
             
@@ -1370,7 +1370,7 @@ unittest // Test nested emit/removal/addition ...
     void slot1()
     {
         doEmit = !doEmit;
-        if(!doEmit)
+        if (!doEmit)
             sig.emit();
     }
     void slot3()
@@ -1394,7 +1394,7 @@ unittest // Test nested emit/removal/addition ...
     sig.strongConnect(&slot1);
     sig.strongConnect(&slot2);
     sig.strongConnect(&slot4);
-    for(int i=0; i<1000; i++)
+    for (int i=0; i<1000; i++)
         sig.emit();
     debug (signal)
     {
