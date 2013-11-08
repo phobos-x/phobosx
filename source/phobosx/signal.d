@@ -213,7 +213,7 @@ struct Signal(Args...)
      */
     void emit( Args args ) @trusted
     {
-        restricted_._impl.emit(args);
+        _restricted._impl.emit(args);
     }
 
     /**
@@ -221,11 +221,11 @@ struct Signal(Args...)
      */
     ref RestrictedSignal!(Args) restricted() @property @trusted
     {
-        return restricted_;
+        return _restricted;
     }
 
     private:
-    RestrictedSignal!(Args) restricted_;
+    RestrictedSignal!(Args) _restricted;
 }
 
 /**
