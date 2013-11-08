@@ -62,7 +62,7 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
  *   protection = Can be any valid protection specifier like
  *   "private", "protected", "package" or in addition "none". Default
  *   is "private". It specifies the protection of the Signal instance,
- *   if none is given, private is used and the ref returning function
+ *   if "none" is given, private is used and the ref returning function
  *   will return a Signal instead of a RestrictedSignal. The
  *   protection of the accessor method is specified by the surrounding
  *   protection scope.
