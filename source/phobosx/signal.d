@@ -1350,14 +1350,14 @@ unittest
 {
     struct Test
     {
-        mixin(signal!int("a", "public"));
+        mixin(signal!int("a", "package"));
         mixin(signal!int("ap", "private"));
         mixin(signal!int("app", "protected"));
         mixin(signal!int("an", "none"));
     }
     debug (signal)
     {
-        pragma(msg, signal!int("a", "public"));
+        pragma(msg, signal!int("a", "package"));
         pragma(msg, signal!(int, string, int[int])("a", "private"));
         pragma(msg, signal!(int, string, int[int], float, double)("a", "protected"));
         pragma(msg, signal!(int, string, int[int], float, double, long)("a", "none"));
