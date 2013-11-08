@@ -131,12 +131,16 @@ void main()
  * Globally observed msg 'setting new value' and value 7
  * </pre>
  */
-string signal(Args...)(string name, string protection="private") @safe {
-    assert(protection == "public" || protection == "private" ||
-           protection == "package" || protection == "protected" ||
-           protection == "none",
+string signal(Args...)(string name, string protection="private") @safe
+in
+{
+    assert(protection == "private" || protection == "package" ||
+           protection == "protected" || protection == "none",
            "Invalid protection specified, must be either:"~
            "public, private, package, protected or none");
+}
+body
+{
 
      string argList="(";
      import std.traits : fullyQualifiedName;
