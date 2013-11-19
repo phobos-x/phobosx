@@ -59,13 +59,18 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
  *   will be named like this, the actual struct instance will have an
  *   underscore prefixed.
  *   
- *   protection = Can be any valid protection specifier like
- *   "private", "protected", "package" or in addition "none". Default
- *   is "private". It specifies the protection of the Signal instance,
- *   if "none" is given, private is used and the ref returning function
- *   will return a Signal instead of a RestrictedSignal. The
- *   protection of the accessor method is specified by the surrounding
- *   protection scope.
+ *   protection = Specifies how the full functionality (emit) of the
+ *   signal should be protected. Default is private. If
+ *   Protection.none is given, private is used for the Signal member
+ *   variable and the ref returning accessor method will return a
+ *   Signal instead of a RestrictedSignal. The protection of the
+ *   accessor method is specified by the surrounding protection scope:
+ ---
+ *     public: // Everyone can access mysig now:
+ *     // Result of mixin(signal!int("mysig", Protection.none))
+ *     ref Signal!int mysig() { return _mysig;}
+ *     private Signal!int _mysig;
+ ---
  *
  * Example:
  ---
@@ -131,33 +136,36 @@ void main()
  * Globally observed msg 'setting new value' and value 7
  * </pre>
  */
-string signal(Args...)(string name, string protection="private") @safe
-in
+string signal(Args...)(string name, Protection protection=Protection.private_) @trusted // trusted necessary because of to!string
 {
-    assert(protection == "private" || protection == "package" ||
-           protection == "protected" || protection == "none",
-           "Invalid protection specified, must be either:"~
-           "public, private, package, protected or none");
+    import std.conv;
+    string argList="(";
+    import std.traits : fullyQualifiedName;
+    foreach (arg; Args)
+    {
+        argList~=fullyQualifiedName!(arg)~", ";
+    }
+    if (argList.length>"(".length)
+        argList = argList[0 .. $-2];
+    argList ~= ")";
+
+    string output = (protection == Protection.none ? "private" : to!string(protection)[0..$-1]) ~
+        " Signal!" ~ argList ~ " _" ~ name ~ ";\n";
+    string rType = protection == Protection.none ? "Signal!" : "RestrictedSignal!";
+    output ~= "ref " ~ rType ~ argList ~ " " ~ name ~ "() { return _" ~ name ~ ";}\n";
+    return output;
 }
-body
+
+/**
+ * Protection to use for the signal string mixin.
+ */
+enum Protection
 {
-
-     string argList="(";
-     import std.traits : fullyQualifiedName;
-     foreach (arg; Args)
-     {
-         argList~=fullyQualifiedName!(arg)~", ";
-     }
-     if (argList.length>"(".length)
-         argList = argList[0 .. $-2];
-     argList ~= ")";
-
-     string output = (protection == "none" ? "private" : protection) ~
-         " Signal!" ~ argList ~ " _" ~ name ~ ";\n";
-     string rType= protection == "none" ? "Signal!" : "RestrictedSignal!";
-     output ~= "ref " ~ rType ~ argList ~ " " ~ name ~ "() { return _" ~ name ~ ";}\n";
-     return output;
- }
+    none, /// No protection at all, the wrapping function will return a ref Signal instead of a ref RestrictedSignal
+    private_, /// The Signal member variable will be private.
+    protected_, /// The signal member variable will be protected.
+    package_ /// The signal member variable will have package protection.
+}
 
 /**
  * Full signal implementation.
@@ -1350,17 +1358,23 @@ unittest
 {
     struct Test
     {
-        mixin(signal!int("a", "package"));
-        mixin(signal!int("ap", "private"));
-        mixin(signal!int("app", "protected"));
-        mixin(signal!int("an", "none"));
+        mixin(signal!int("a", Protection.package_));
+        mixin(signal!int("ap", Protection.private_));
+        mixin(signal!int("app", Protection.protected_));
+        mixin(signal!int("an", Protection.none));
     }
+
+    static assert(signal!int("a", Protection.package_)=="package Signal!(int) _a;\nref RestrictedSignal!(int) a() { return _a;}\n");
+    static assert(signal!int("a", Protection.protected_)=="protected Signal!(int) _a;\nref RestrictedSignal!(int) a() { return _a;}\n");
+    static assert(signal!int("a", Protection.private_)=="private Signal!(int) _a;\nref RestrictedSignal!(int) a() { return _a;}\n");
+    static assert(signal!int("a", Protection.none)=="private Signal!(int) _a;\nref Signal!(int) a() { return _a;}\n");
+    
     debug (signal)
     {
-        pragma(msg, signal!int("a", "package"));
-        pragma(msg, signal!(int, string, int[int])("a", "private"));
-        pragma(msg, signal!(int, string, int[int], float, double)("a", "protected"));
-        pragma(msg, signal!(int, string, int[int], float, double, long)("a", "none"));
+        pragma(msg, signal!int("a", Protection.package_));
+        pragma(msg, signal!(int, string, int[int])("a", Protection.private_));
+        pragma(msg, signal!(int, string, int[int], float, double)("a", Protection.protected_));
+        pragma(msg, signal!(int, string, int[int], float, double, long)("a", Protection.none));
     }
 }
 
