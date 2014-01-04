@@ -5,9 +5,19 @@
  * Essentially, when a Signal is emitted, a list of connected Observers
  * (called slots) are called.
  *
- * This implementation supersedes the former std.signals.
+ * They were first introduced in the $(LINK2
+ * http://en.wikipedia.org/wiki/Qt_%28framework%29, Qt GUI toolkit), alternate
+ * implementations are $(LINK2 http://libsigc.sourceforge.net, libsig++) or
+ * $(LINK2 http://www.boost.org/doc/libs/1_55_0/doc/html/signals.html,
+ * Boost.Signals2) similar concepts are implemented in other languages than C++
+ * too. 
  *
- * Copyright: Copyright Robert Klotzner 2012 - 2013.
+ * This implementation supersedes the former std.signals, it fixes a few bugs,
+ * but of more interest is the much more powerful interface. Not only can you
+ * now attach signals to non objects, but also make indirect connections to
+ * objects via wrapping delegates, adapting parameters as needed.
+ *
+ * Copyright: Copyright Robert Klotzner 2012 - 2014.
  * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
  * Authors:   Robert Klotzner
  */
@@ -74,7 +84,10 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
  *
  * Example:
  ---
+ import std.signal;
  import std.stdio;
+ import std.functional;
+
  class MyObject
  {
      // Mixin signal named valueChanged, with default "private" protection.
@@ -116,11 +129,11 @@ void main()
     a.valueChanged.connect!"watch"(o);        // o.watch is the slot
     a.value = 4;                // should call o.watch()
     a.valueChanged.disconnect!"watch"(o);     // o.watch is no longer a slot
-    a.value = 5;                // so should not call o.watch()
+    a.value = 5;                // should not call o.watch()
     a.valueChanged.connect!"watch"(o);        // connect again
     // Do some fancy stuff:
     a.valueChanged.connect!Observer(o, (obj, msg, i) =>  obj.watch("Some other text I made up", i+1));
-    a.valueChanged.strongConnect(&watch);
+    a.valueChanged.strongConnect(toDelegate(&watch));
     a.value = 6;                // should call o.watch()
     destroy(o);                 // destroying o should automatically disconnect it
     a.value = 7;                // should not call o.watch()
@@ -177,7 +190,7 @@ enum Protection
  * way. The receiver does not need to know anything about the sender
  * and the sender does not need to know anything about the
  * receivers. The sender will just call emit when something happens,
- * the signal takes care of notifing all interested parties. By using
+ * the signal takes care of notifying all interested parties. By using
  * wrapper delegates/functions, not even the function signature of
  * sender/receiver need to match.
  *
@@ -217,7 +230,7 @@ struct Signal(Args...)
      * concurrency reasons they are set just to an invalid state by the GC.
      *
      * If you remove a slot during emit() it won't be called in the
-     * current run if it wasn't already.
+     * current run if it was not already.
      *
      * If you add a slot during emit() it will be called in the
      * current emit() run. Note however Signal is not thread-safe, "called
@@ -341,8 +354,8 @@ struct RestrictedSignal(Args...)
     /**
       * Disconnect a direct connection.
       *
-      * After issuing this call, methods of obj won't be triggered any
-      * longer when emit is called.
+      * After issuing this call, the connection to method of obj is lost
+      * and obj.method() will no longer be called on emit.
       * Preconditions: Same as for direct connect.
       */
     void disconnect(string method, ClassType)(ClassType obj) @trusted
@@ -364,8 +377,8 @@ struct RestrictedSignal(Args...)
       * the one passed to connect. So if you used a lamda you have to
       * keep a reference to it somewhere if you want to disconnect
       * the connection later on.  If you want to remove all
-      * connections to a particular object use the overload which only
-      * takes an object paramter.
+      * connections to a particular object, use the overload which only
+      * takes an object parameter.
      */
     void disconnect(ClassType)(ClassType obj, void delegate(ClassType, T1) dg) @trusted
         if (is(ClassType == class))
@@ -416,7 +429,7 @@ private struct SignalImpl
 {
     /**
       * Forbid copying.
-      * Unlike the old implementations, it now is theoretically
+      * Unlike the old implementations, it would now be theoretically
       * possible to copy a signal. Even different semantics are
       * possible. But none of the possible semantics are what the user
       * intended in all cases, so I believe it is still the safer
@@ -592,7 +605,7 @@ private struct SlotImpl
             return obj is o && _dataPtr is dg.ptr && funcPtr is dg.funcptr;
     }
     /**
-     * Implement proper explict move.
+     * Implement proper explicit move.
      */
     void moveFrom(ref SlotImpl other)
     in { assert(this is SlotImpl.init); }
@@ -661,7 +674,7 @@ private struct SlotImpl
         return true;
     }
     /**
-     * Reset this instance to its intial value.
+     * Reset this instance to its initial value.
      */   
     void reset() {
         _funcPtr = SlotImpl.init._funcPtr;
@@ -939,8 +952,10 @@ unittest {
         writeln("Slot array tests passed!");
     }
 }
+
 unittest
 { // Check that above example really works ...
+    import std.functional;
     debug (signal) import std.stdio;
     class MyObject
     {
@@ -969,10 +984,11 @@ unittest
         }
     }
 
-    void watch(string msg, int i)
+    static void watch(string msg, int i)
     {
-            debug (signal) writefln("Globally observed msg '%s' and value %s", msg, i);
+        debug (signal) writefln("Globally observed msg '%s' and value %s", msg, i);
     }
+
     auto a = new MyObject;
     Observer o = new Observer;
 
@@ -984,11 +1000,10 @@ unittest
     a.valueChanged.connect!"watch"(o);        // connect again
     // Do some fancy stuff:
     a.valueChanged.connect!Observer(o, (obj, msg, i) =>  obj.watch("Some other text I made up", i+1));
-    a.valueChanged.strongConnect(&watch);
+    a.valueChanged.strongConnect(toDelegate(&watch));
     a.value = 6;                // should call o.watch()
     destroy(o);                 // destroying o should automatically disconnect it
     a.value = 7;                // should not call o.watch()
-
 }
 
 unittest
