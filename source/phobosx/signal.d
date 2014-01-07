@@ -9,7 +9,7 @@
  * $(LINK2 http://en.wikipedia.org/wiki/Qt_%28framework%29, Qt GUI toolkit), alternate implementations are
  * $(LINK2 http://libsigc.sourceforge.net, libsig++) or
  * $(LINK2 http://www.boost.org/doc/libs/1_55_0/doc/html/signals2.html, Boost.Signals2)
- * similar concepts are implemented in other languages than C++ too. 
+ * similar concepts are implemented in other languages than C++ too.
  *
  * Copyright: Copyright Robert Klotzner 2012 - 2014.
  * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
@@ -170,7 +170,7 @@ struct Signal(Args...)
 
     /**
      * Get access to the rest of the signals functionality.
-     * 
+     *
      * By only granting your users access to the returned RestrictedSignal
      * reference, you are preventing your users from calling emit on their
      * own.
@@ -209,7 +209,7 @@ struct RestrictedSignal(Args...)
      *     compatible with this signal.
      */
     void connect(string method, ClassType)(ClassType obj) @trusted
-        if (is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);})) 
+        if (is(ClassType == class) && __traits(compiles, {void delegate(Args) dg = mixin("&obj."~method);}))
     in
     {
         assert(obj);
@@ -237,13 +237,13 @@ struct RestrictedSignal(Args...)
      * Params:
      *     obj = The object to connect to. It will be passed to the
      *     delegate when the signal is emitted.
-     *     
+     *
      *     dg = A wrapper delegate which takes care of calling some
      *     method of obj. It can do any kind of parameter adjustments
      *     necessary.
      */
     void connect(ClassType)(ClassType obj, void delegate(ClassType obj, Args) dg) @trusted
-        if (is(ClassType == class)) 
+        if (is(ClassType == class))
     in
     {
         assert(obj);
@@ -265,7 +265,7 @@ struct RestrictedSignal(Args...)
      * connection is not removed and the signal gets not destroyed
      * itself.
      *
-     * Preconditions: dg must not be null. 
+     * Preconditions: dg must not be null.
      *
      * Params:
      *     dg = The delegate to be connected.
@@ -325,7 +325,7 @@ struct RestrictedSignal(Args...)
     /**
      * Disconnect all connections to obj.
      *
-     * All connections to obj made with calls to connect are removed. 
+     * All connections to obj made with calls to connect are removed.
      */
     void disconnect(ClassType)(ClassType obj) @trusted if (is(ClassType == class))
     in
@@ -336,7 +336,7 @@ struct RestrictedSignal(Args...)
     {
         _impl.removeSlot(obj);
     }
-    
+
     /**
      * Disconnect a connection made with strongConnect.
      *
@@ -381,13 +381,13 @@ struct RestrictedSignal(Args...)
  ---
  *     ref RestrictedSignal!(SomeTemplate!int) mysig() { return _mysig;}
  *     private Signal!(SomeTemplate!int) _mysig;
- ---     
+ ---
  *
  * Params:
  *   name = How the signal should be named. The ref returning function
  *   will be named like this, the actual struct instance will have an
  *   underscore prefixed.
- *   
+ *
  *   protection = Specifies how the full functionality (emit) of the
  *   signal should be protected. Default is private. If
  *   Protection.none is given, private is used for the Signal member
@@ -460,7 +460,7 @@ private struct SignalImpl
         doEmit(0, emptyCount, args);
         if (emptyCount > 0)
         {
-            _slots.slots = _slots.slots[0 .. $-emptyCount]; 
+            _slots.slots = _slots.slots[0 .. $-emptyCount];
             _slots.slots.assumeSafeAppend();
         }
     }
@@ -485,7 +485,7 @@ private struct SignalImpl
     {
         removeSlot((ref SlotImpl item) => item.wasConstructedFrom(obj, dg));
     }
-    void removeSlot(Object obj) 
+    void removeSlot(Object obj)
     {
         removeSlot((ref SlotImpl item) => item.obj is obj);
     }
@@ -520,7 +520,7 @@ private struct SignalImpl
             foreach (int i, ref slot; mslots)
             {
             // We are retrieving obj twice which is quite expensive because of GC lock:
-                if (!slot.isValid || isRemoved(slot)) 
+                if (!slot.isValid || isRemoved(slot))
                 {
                     emptyCount++;
                     slot.reset();
@@ -528,7 +528,7 @@ private struct SignalImpl
                 else if (emptyCount)
                     mslots[i-emptyCount].moveFrom(slot);
             }
-            
+
             if (emptyCount > 0)
             {
                 mslots = mslots[0..$-emptyCount];
@@ -539,14 +539,14 @@ private struct SignalImpl
     }
 
     /**
-     * Helper method to allow all slots being called even in case of an exception. 
+     * Helper method to allow all slots being called even in case of an exception.
      * All exceptions that occur will be chained.
      * Any invalid slots (GC collected or removed) will be dropped.
      */
     void doEmit(Args...)(int offset, ref int emptyCount, Args args )
     {
         int i=offset;
-        auto myslots = _slots.slots; 
+        auto myslots = _slots.slots;
         scope (exit) if (i+1<myslots.length) doEmit(i+1, emptyCount, args); // Carry on.
         if (emptyCount == -1)
         {
@@ -562,7 +562,7 @@ private struct SignalImpl
             {
                 bool result = myslots[i](args);
                 myslots = _slots.slots; // Refresh because addSlot might have been called.
-                if (!result) 
+                if (!result)
                     emptyCount++;
                 else if (emptyCount>0)
                 {
@@ -580,11 +580,11 @@ private struct SignalImpl
 // Simple convenience struct for signal implementation.
 // Its is inherently unsafe. It is not a template so SignalImpl does
 // not need to be one.
-private struct SlotImpl 
+private struct SlotImpl
 {
     @disable this(this);
     @disable void opAssign(SlotImpl other);
-    
+
     /// Pass null for o if you have a strong ref delegate.
     /// dg.funcptr must not point to heap memory.
     void construct(Object o, void delegate() dg)
@@ -597,7 +597,7 @@ private struct SlotImpl
         assert(GC.addrOf(_funcPtr) is null, "Your function is implemented on the heap? Such dirty tricks are not supported with std.signal!");
         if (o)
         {
-            if (_dataPtr is cast(void*) o) 
+            if (_dataPtr is cast(void*) o)
                 _dataPtr = directPtrFlag;
             hasObject = true;
         }
@@ -626,7 +626,7 @@ private struct SlotImpl
         _funcPtr = other._funcPtr;
         other.reset(); // Destroy original!
     }
-    
+
     @property Object obj()
     {
         return _obj.obj;
@@ -645,7 +645,7 @@ private struct SlotImpl
      *
      * Meaning opCall will call something and return true;
      */
-    bool isValid() @property 
+    bool isValid() @property
     {
         return funcPtr && (!hasObject || obj !is null);
     }
@@ -658,8 +658,8 @@ private struct SlotImpl
     {
         auto o = obj;
         void* o_addr = cast(void*)(o);
-        
-        if (!funcPtr || (hasObject && !o_addr)) 
+
+        if (!funcPtr || (hasObject && !o_addr))
             return false;
         if (_dataPtr is directPtrFlag || !hasObject)
         {
@@ -684,7 +684,7 @@ private struct SlotImpl
     }
     /**
      * Reset this instance to its initial value.
-     */   
+     */
     void reset() {
         _funcPtr = SlotImpl.init._funcPtr;
         _dataPtr = SlotImpl.init._dataPtr;
@@ -731,7 +731,7 @@ private struct WeakRef
      */
     @disable this(this);
     @disable void opAssign(WeakRef other);
-    void construct(Object o) 
+    void construct(Object o)
     in { assert(this is WeakRef.init); }
     body
     {
@@ -742,13 +742,13 @@ private struct WeakRef
         _obj.construct(cast(void*)o);
         rt_attachDisposeEvent(o, &unhook);
     }
-    Object obj() @property 
+    Object obj() @property
     {
         return cast(Object) _obj.address;
     }
     /**
      * Reset this instance to its intial value.
-     */   
+     */
     void reset()
     {
         auto o = obj;
@@ -760,7 +760,7 @@ private struct WeakRef
         //so the assertion of SlotImpl.moveFrom would fail.
         debug (signal) createdThis = null;
     }
-    
+
     ~this()
     {
         reset();
@@ -778,12 +778,12 @@ private struct WeakRef
 
         WeakRef* createdThis;
     }
-    
+
     void unhook(Object o)
     {
         _obj.reset();
     }
-    
+
     shared(InvisibleAddress) _obj;
 }
 
@@ -803,10 +803,10 @@ private shared struct InvisibleAddress
     {
         atomicStore(_addr, 0L);
     }
-    void* address() @property 
+    void* address() @property
     {
-        makeVisible(); 
-        scope (exit) makeInvisible(); 
+        makeVisible();
+        scope (exit) makeInvisible();
         GC.addrOf(cast(void*)atomicLoad(_addr)); // Just a dummy call to the GC
                                  // in order to wait for any possible running
                                  // collection to complete (have unhook called).
@@ -855,13 +855,13 @@ private:
         static long makeInvisible(long addr)
         {
             return ~addr;
-        }                
+        }
         static bool isVisible(long addr)
         {
             return !(addr & (1L << (ptrdiff_t.sizeof*8-1)));
         }
         static bool isNull(long addr)
-        {  
+        {
             return ( addr == 0 || addr == (~0) );
         }
     }
@@ -879,7 +879,7 @@ private:
             auto addrHigh = ((addr >> 16) & 0x0000ffff) | 0xffff0000;
             auto addrLow = (addr & 0x0000ffff) | 0xffff0000;
             return (cast(long)addrHigh << 32) | addrLow;
-        }                
+        }
         static bool isVisible(long addr)
         {
             return !((addr >> 32) & 0xffffffff);
@@ -1032,7 +1032,7 @@ unittest
         string captured_msg;
     }
 
-    class SimpleObserver 
+    class SimpleObserver
     {
         void watchOnlyInt(int i) {
             captured_value = i;
@@ -1087,7 +1087,7 @@ unittest
     //a.extendedSig.connect!Observer(o, (obj, msg, i) { obj.watch("Hahah", i); });
     a.extendedSig.connect!Observer(o, (obj, msg, i) => obj.watch("Hahah", i) );
 
-    a.value = 7;        
+    a.value = 7;
     debug (signal) stderr.writeln("After asignment!");
     assert(o.captured_value == 7);
     assert(o.captured_msg == "Hahah");
@@ -1285,26 +1285,26 @@ unittest {
     a.value6 = 46;
 }
 
-unittest 
+unittest
 {
     import std.stdio;
 
-    struct Property 
+    struct Property
     {
         alias value this;
         mixin(signal!(int)("signal"));
-        @property int value() 
+        @property int value()
         {
             return value_;
         }
-        ref Property opAssign(int val) 
+        ref Property opAssign(int val)
         {
             debug (signal) writeln("Assigning int to property with signal: ", &this);
             value_ = val;
             _signal.emit(val);
             return this;
         }
-        private: 
+        private:
         int value_;
     }
 
@@ -1313,7 +1313,7 @@ unittest
         debug (signal) writefln("observe: Wow! The value changed: %s", val);
     }
 
-    class Observer 
+    class Observer
     {
         void observe(int val)
         {
@@ -1338,12 +1338,12 @@ unittest
     assert(o.observed==prop);
 }
 
-unittest 
+unittest
 {
     debug (signal) import std.stdio;
     import std.conv;
     Signal!() s1;
-    void testfunc(int id) 
+    void testfunc(int id)
     {
         throw new Exception(to!string(id));
     }
@@ -1392,7 +1392,7 @@ unittest
     static assert(signal!int("a", Protection.protected_)=="protected Signal!(int) _a;\nref RestrictedSignal!(int) a() { return _a;}\n");
     static assert(signal!int("a", Protection.private_)=="private Signal!(int) _a;\nref RestrictedSignal!(int) a() { return _a;}\n");
     static assert(signal!int("a", Protection.none)=="private Signal!(int) _a;\nref Signal!(int) a() { return _a;}\n");
-    
+
     debug (signal)
     {
         pragma(msg, signal!int("a", Protection.package_));
@@ -1423,7 +1423,7 @@ unittest // Test nested emit/removal/addition ...
     {
         debug (signal) { import std.stdio; writefln("\nCALLED: %s, should called: %s", slot3called, slot3shouldcalled);}
         assert (slot3called == slot3shouldcalled);
-        if ( ++counter < 100) 
+        if ( ++counter < 100)
             slot3shouldcalled += counter;
         if ( counter < 100 )
             sig.strongConnect(&slot3);
