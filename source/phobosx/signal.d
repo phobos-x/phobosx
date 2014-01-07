@@ -6,7 +6,7 @@
  * (called slots) are called.
  *
  * They were first introduced in the
- * $(LINK2 http://en.wikipedia.org/wiki/Qt_%28framework%29, "Qt GUI toolkit"), alternate implementations are
+ * $(LINK2 http://en.wikipedia.org/wiki/Qt_%28framework%29, Qt GUI toolkit), alternate implementations are
  * $(LINK2 http://libsigc.sourceforge.net, libsig++) or
  * $(LINK2 http://www.boost.org/doc/libs/1_55_0/doc/html/signals2.html, Boost.Signals2)
  * similar concepts are implemented in other languages than C++ too. 
@@ -56,7 +56,7 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
  * Another consequence of this very loose coupling is, that a
  * connected object will be freed by the GC if all references to it
  * are dropped, even if it was still connected to a signal. The
- * connection will simply be dropped. This way the developer is freed of
+ * connection will simply be removed. This way the developer is freed of
  * manually keeping track of connections.
  *
  * If in your application the connections made by a signal are not
@@ -69,7 +69,6 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
  *
  * Bugs: The code probably won't compile with -profile because of bug:
  *       $(LINK2 http://d.puremagic.com/issues/show_bug.cgi?id=10260, 10260)
- ---
  *
  * Example:
  ---
@@ -98,7 +97,7 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
      }
  private:
      int _value;
-}
+ }
 
  class Observer
  {   // our slot
@@ -262,7 +261,7 @@ struct RestrictedSignal(Args...)
      * Use this overload if you either want strong ref
      * semantics for some reason or because you want to connect some
      * non-class method delegate. Whatever the delegates' context
-     * references, will stay in memory as long as the signals
+     * references will stay in memory as long as the signals'
      * connection is not removed and the signal gets not destroyed
      * itself.
      *
@@ -369,11 +368,9 @@ struct RestrictedSignal(Args...)
 ---
      mixin(signal!(string, int)("valueChanged"));
 ---
- * It creates a Signal instance named "_name", where name is given
- * as first parameter with given protection and an accessor method
- * with the current context protection named "name" returning either a
- * ref RestrictedSignal or ref Signal depending on the given
- * protection.
+ * Additional flexibility is provided by the protection parameter,
+ * where you can change the protection of _valueChanged to protected
+ * for example.
  *
  * Bugs:
  *     This mixin generator does not work with templated types right now because of:
@@ -402,6 +399,7 @@ struct RestrictedSignal(Args...)
  *     // Result of mixin(signal!int("mysig", Protection.none))
  *     ref Signal!int mysig() { return _mysig;}
  *     private Signal!int _mysig;
+ ---
  */
 string signal(Args...)(string name, Protection protection=Protection.private_) @trusted // trusted necessary because of to!string
 {
