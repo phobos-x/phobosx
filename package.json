@@ -3,6 +3,7 @@
     "description": "Experimental phobos modules",
     "homepage": "https://vhios.dyndns.org/dlang.org/web/phobos-prerelease/std_signal.html",
     "copyright": "Copyright © 2013-2014, Robert Klotzner",
+    "license" : "BSL-1.0",
     "authors": [
 	"Robert Klotzner"
     ],
