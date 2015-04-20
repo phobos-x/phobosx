@@ -595,6 +595,7 @@ private struct SlotImpl
         _dataPtr = dg.ptr;
         _funcPtr = dg.funcptr;
         assert(GC.addrOf(_funcPtr) is null, "Your function is implemented on the heap? Such dirty tricks are not supported with std.signal!");
+        assert(!hasObject, "Function has it's MSB set - we got a problem here!");
         if (o)
         {
             if (_dataPtr is cast(void*) o)
@@ -637,7 +638,7 @@ private struct SlotImpl
      */
     bool hasObject() @property const
     {
-        return cast(ptrdiff_t) _funcPtr & 1;
+        return (cast(ptrdiff_t) _funcPtr & hasObjectBit) != 0;
     }
 
     /**
@@ -693,14 +694,14 @@ private struct SlotImpl
 private:
     void* funcPtr() @property const
     {
-        return cast(void*)( cast(ptrdiff_t)_funcPtr & ~cast(ptrdiff_t)1);
+        return cast(void*)( cast(ptrdiff_t)_funcPtr & ~cast(ptrdiff_t)hasObjectBit);
     }
     void hasObject(bool yes) @property
     {
         if (yes)
-            _funcPtr = cast(void*)(cast(ptrdiff_t) _funcPtr | 1);
+            _funcPtr = cast(void*)(cast(ptrdiff_t) _funcPtr | hasObjectBit);
         else
-            _funcPtr = cast(void*)(cast(ptrdiff_t) _funcPtr & ~cast(ptrdiff_t)1);
+            _funcPtr = cast(void*)(cast(ptrdiff_t) _funcPtr & ~cast(ptrdiff_t)hasObjectBit);
     }
     void* _funcPtr;
     void* _dataPtr;
@@ -708,6 +709,7 @@ private:
 
 
     enum directPtrFlag = cast(void*)(~0);
+    enum hasObjectBit = 1L << (ptrdiff_t.sizeof * 8 - 1);
 }
 
 
