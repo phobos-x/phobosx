@@ -32,6 +32,7 @@ module phobosx.signal;
 
 import core.atomic;
 import core.memory;
+import std.functional : toDelegate;
 
 
 // Hook into the GC to get informed about object deletions.
@@ -123,7 +124,7 @@ private extern (C) void  rt_detachDisposeEvent( Object obj, DisposeEvt evt );
      a.valueChanged.connect!"watch"(o);        // connect again
      // Do some fancy stuff:
      a.valueChanged.connect!Observer(o, (obj, msg, i) =>  obj.watch("Some other text I made up", i+1));
-     a.valueChanged.strongConnect(toDelegate(&watch));
+     a.valueChanged.connect(&watch);
      a.value = 6;                // should call o.watch()
      destroy(o);                 // destroying o should automatically disconnect it
      a.value = 7;                // should not call o.watch()
@@ -256,6 +257,24 @@ struct RestrictedSignal(Args...)
     }
 
     /**
+     * Connect a free function to this signal.
+     *
+     * Preconditions: fn must not be null. 
+     * 
+     * Params:
+     *     fn = The free function to be connected.
+     */
+    void connect(void function(Args) fn) @trusted
+    in
+    {
+        assert(fn);
+    }
+    body
+    {
+        strongConnect(toDelegate(fn));
+    }
+
+    /**
      * Connect with strong ref semantics.
      *
      * Use this overload if you either want strong ref
@@ -337,6 +356,24 @@ struct RestrictedSignal(Args...)
         _impl.removeSlot(obj);
     }
 
+    /**
+     * Disconnect a free function.
+     *
+     * Preconditions: fn must not be null. 
+     * 
+     * Params:
+     *    fn = The function to be disconnected.
+     */
+    void disconnect(void function(Args) fn) @trusted
+    in
+    {
+        assert(fn);
+    }
+    body
+    {
+        strongDisconnect(toDelegate(fn));
+    }
+    
     /**
      * Disconnect a connection made with strongConnect.
      *
@@ -1011,7 +1048,7 @@ unittest
     a.valueChanged.connect!"watch"(o);        // connect again
     // Do some fancy stuff:
     a.valueChanged.connect!Observer(o, (obj, msg, i) =>  obj.watch("Some other text I made up", i+1));
-    a.valueChanged.strongConnect(toDelegate(&watch));
+    a.valueChanged.connect(&watch);
     a.value = 6;                // should call o.watch()
     destroy(o);                 // destroying o should automatically disconnect it
     a.value = 7;                // should not call o.watch()
