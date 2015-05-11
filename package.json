@@ -1,5 +1,5 @@
 {
-    "name": "phobosx.signal",
+    "name": "phobosx_signal",
     "description": "Replacement for std.signal, with more features and less bugs",
     "homepage": "https://vhios.dyndns.org/dlang.org/web/phobos-prerelease/std_signal.html",
     "copyright": "Copyright © 2013-2014, Robert Klotzner",
