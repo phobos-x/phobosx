@@ -1,10 +1,10 @@
 {
     "name": "phobosx",
-    "description": "Replacement for std.signal, with more features and less bugs.",
+    "description": "Replacement for std.signals, with more features and less bugs.",
     "homepage": "https://github.com/phobos-x/phobosx/blob/master/source/phobosx/signal.d",
     "copyright": "Copyright © 2013-2015, Robert Klotzner",
     "license" : "BSL-1.0",
-    "version" : "0.7.2",
+    "version" : "0.7.3",
     "authors": [
 	"Robert Klotzner"
     ],
