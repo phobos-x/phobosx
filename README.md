@@ -4,6 +4,9 @@ phobosx
 Experimental modules that are intended for the phobos standard library
 of [D](http://dlang.org).
 
+Currently the only content is phobosx.signal, which is meant as a
+replacement for std.signals.
+
 The idea is to put modules which are intended for phobos, here
 first. It is experimental because the modules in here will break your
 code any time. If you need a reliable, stable API and can't afford
